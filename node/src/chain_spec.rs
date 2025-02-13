@@ -26,13 +26,9 @@ where
 	AccountPublic::from(get_from_seed::<TPublic>(seed)).into_account()
 }
 
-
-// pub const INITIAL_DIFFICULTY: u64 = 64975581388; // This is > 1000 iterations
-
 // This dicciulty can on average be found on 100 tries of the nonce, so it's quite easy
 // Difficulty grows by an exponential of x^16 so it's a non-linear growth, difficulty adjustments. 
 // We will experiment and provide a formula on how to increase the difficulty linearly.
-pub const INITIAL_DIFFICULTY: u64 = 56255914621; // around 100 iterations
 
 pub fn development_config() -> Result<ChainSpec, String> {
 	Ok(ChainSpec::builder(

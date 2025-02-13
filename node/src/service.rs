@@ -347,7 +347,7 @@ fn try_nonce<B: BlockT<Hash = H256>>(
 
 #[cfg(test)]
 mod tests {
-    use crate::chain_spec::INITIAL_DIFFICULTY;
+    use qpow::INITIAL_DIFFICULTY;
 
     use super::*;
     use sp_core::H256;

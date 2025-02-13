@@ -11,6 +11,7 @@ use primitive_types::{H512, U512};
 use sha2::{Digest, Sha256};
 use sha3::Sha3_512;
 
+
 #[cfg(test)]
 mod mock;
 
@@ -19,6 +20,8 @@ mod tests;
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
+
+pub const INITIAL_DIFFICULTY: u64 = 56255914621; // around 100 iterations
 
 #[derive(Clone, Debug, Encode, Decode, PartialEq)]
 pub struct QPoWSeal {
@@ -66,7 +69,7 @@ impl<B: BlockT<Hash = H256>> PowAlgorithm<B> for MinimalQPowAlgorithm {
 
     fn difficulty(&self, _parent: B::Hash) -> Result<Self::Difficulty, Error<B>> {
         // Fixed difficulty hardcoded here
-        Ok(U256::from(2))
+        Ok(U256::from(INITIAL_DIFFICULTY / 2)) // TODO setting to trivial difficulty for now
     }
 
     fn verify(
@@ -349,9 +352,9 @@ impl QPow {
         true
     }
 
-    pub fn get_difficulty() -> u64 {
-        100
-    }
+    // pub fn get_difficulty() -> u64 {
+    //     100
+    // }
 
     pub fn log_info(message: &str) {
         log::info!("FROM PALL: {}", message);
