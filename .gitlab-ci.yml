@@ -1,0 +1,53 @@
+compile:
+  stage: build
+  tags: [rust, ubuntu]
+  image: rust:latest
+  variables:
+    CARGO_TERM_COLOR: always
+    RUST_TOOLCHAIN: stable
+    RUSTFLAGS: -Cdebug-assertions=y
+  before_script:
+    - apt-get update -yqq
+    - apt-get install -yqq --no-install-recommends libclang-dev
+    - apt-get install -yqq --no-install-recommends protobuf-compiler
+    - rustup default stable
+    - rustup update
+    - rustup show
+    - cargo --version
+    - rustup target add wasm32-unknown-unknown
+    - rustup component add rust-src
+  script:
+    - cargo build --locked --release --verbose
+  after_script:
+    - mv target/release/resonance-node ./resonance
+    - sha256sum ./resonance | cut -d ' ' -f 1 | tee ./resonance.sha256
+    - mv target/release/wbuild/resonance-runtime/resonance_runtime.compact.compressed.wasm ./resonance_runtime.compact.compressed.wasm
+    - sha256sum ./resonance_runtime.compact.compressed.wasm | cut -d ' ' -f 1 | tee ./resonance_runtime.compact.compressed.wasm.sha256
+  artifacts:
+    paths:
+      - resonance
+      - resonance.sha256
+      - resonance_runtime.compact.compressed.wasm
+      - resonance_runtime.compact.compressed.wasm.sha256
+
+testnet:
+  stage: deploy
+  dependencies:
+    - compile
+  rules:
+    - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+  tags: [fedora, infra]
+  image: fedora:latest
+  variables:
+    ssh_command: ssh -o IdentityFile=/root/.ssh/id_ed25519 -o IdentitiesOnly=yes
+  before_script:
+    - dnf update --assumeyes --quiet
+    - dnf install --assumeyes --quiet rsync ssh
+  script:
+    - |
+      for ip in 10.9.1.104 10.9.1.105 10.9.1.215; do
+        ${ssh_command} resonance@${ip} 'systemctl is-active --quiet resonance.service && sudo systemctl stop resonance.service' || true
+        rsync --archive --compress --rsync-path='sudo rsync' --rsh "${ssh_command}" --verbose ./resonance resonance@${ip}:/usr/local/bin/resonance
+        ${ssh_command} resonance@${ip} 'sudo systemctl start resonance.service' || true
+        sleep 10
+      done
