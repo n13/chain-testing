@@ -32,3 +32,5 @@ std = [
     "sha2/std",
     "sha3/std",
 ]
+runtime-benchmarks = [
+]

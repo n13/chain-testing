@@ -30,9 +30,9 @@ use frame_support::{
 	weights::Weight,
 };
 use sp_api::impl_runtime_apis;
-use sp_core::{crypto::KeyTypeId, OpaqueMetadata};
+use sp_core::OpaqueMetadata;
 use sp_runtime::{
-	traits::{Block as BlockT, NumberFor},
+	traits::{Block as BlockT},
 	transaction_validity::{TransactionSource, TransactionValidity},
 	ApplyExtrinsicResult,
 };
@@ -41,7 +41,7 @@ use sp_version::RuntimeVersion;
 // Local module imports
 use super::{
 	AccountId, Balance, Block, Executive, InherentDataExt, Nonce, Runtime,
-	RuntimeCall, RuntimeGenesisConfig, SessionKeys, System, TransactionPayment, VERSION,
+	RuntimeCall, RuntimeGenesisConfig, System, TransactionPayment, VERSION,
 };
 
 impl_runtime_apis! {

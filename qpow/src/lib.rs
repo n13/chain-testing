@@ -1,13 +1,13 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 use codec::{Decode, Encode};
 use sc_consensus_pow::{Error, PowAlgorithm};
-use sp_consensus_pow::{DifficultyApi, Seal as RawSeal};
+use sp_consensus_pow::{Seal as RawSeal};
 use sp_core::{H256, U256};
 use sp_runtime::generic::BlockId;
 use sp_runtime::traits::Block as BlockT;
 use num_bigint::BigUint;
 use num_traits::{One, Zero};
-use primitive_types::{H512, U512};
+use primitive_types::U512;
 use sha2::{Digest, Sha256};
 use sha3::Sha3_512;
 

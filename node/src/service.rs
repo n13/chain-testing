@@ -2,13 +2,12 @@
 
 use futures::FutureExt;
 use qpow::{QPow, Compute, QPoWSeal, MinimalQPowAlgorithm};
-use sc_client_api::{Backend, BlockBackend};
-use sc_service::{error::Error as ServiceError, Configuration, TaskManager, WarpSyncConfig};
+use sc_client_api::Backend;
+use sc_service::{error::Error as ServiceError, Configuration, TaskManager};
 use sc_telemetry::{Telemetry, TelemetryWorker};
 use sc_transaction_pool_api::OffchainTransactionPoolFactory;
 use resonance_runtime::{self, apis::RuntimeApi, opaque::Block};
 use sp_core::{H256, U256};
-use sp_inherents::CreateInherentDataProviders;
 
 use std::{sync::Arc, time::Duration};
 
