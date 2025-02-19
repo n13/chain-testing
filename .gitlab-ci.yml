@@ -4,20 +4,19 @@ compile:
   image: rust:latest
   variables:
     CARGO_TERM_COLOR: always
-    RUST_TOOLCHAIN: stable
     RUSTFLAGS: -Cdebug-assertions=y
   before_script:
     - apt-get update -yqq
     - apt-get install -yqq --no-install-recommends libclang-dev
     - apt-get install -yqq --no-install-recommends protobuf-compiler
-    - rustup default stable
+    - rustup toolchain install nightly
     - rustup update
     - rustup show
     - cargo --version
-    - rustup target add wasm32-unknown-unknown
-    - rustup component add rust-src
+    - rustup target add wasm32-unknown-unknown --toolchain nightly-x86_64-unknown-linux-gnu
+    - rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
   script:
-    - cargo build --locked --release --verbose
+    - cargo +nightly build --locked --release --verbose
   after_script:
     - mv target/release/resonance-node ./resonance
     - sha256sum ./resonance | cut -d ' ' -f 1 | tee ./resonance.sha256
