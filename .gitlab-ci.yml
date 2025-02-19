@@ -39,15 +39,21 @@ testnet:
   image: fedora:latest
   variables:
     ssh_command: ssh -o IdentityFile=/root/.ssh/id_ed25519 -o IdentitiesOnly=yes
+    target_ips: 10.9.1.104 10.9.1.105 10.9.1.215
   before_script:
     - dnf update --assumeyes --quiet
     - dnf install --assumeyes --quiet rsync ssh
   script:
     - |
-      for ip in 10.9.1.104 10.9.1.105 10.9.1.215; do
-        ${ssh_command} resonance@${ip} 'systemctl is-active --quiet resonance.service && sudo systemctl stop resonance.service && sudo rm -rf /var/lib/resonance/chains' || true
+      for ip in ${target_ips}; do
+        ${ssh_command} resonance@${ip} 'systemctl is-active --quiet resonance.service && sudo systemctl stop resonance.service && sudo rm -rf /var/lib/resonance/chains && echo "$(resonance --version | head -n 1) stopped and reset on $(hostname -s)"' || true
+      done
+    - |
+      for ip in ${target_ips}; do
         rsync --archive --compress --rsync-path='sudo rsync' --rsh "${ssh_command}" --verbose ./resonance resonance@${ip}:/usr/local/bin/resonance
-        ${ssh_command} resonance@${ip} 'sudo systemctl start resonance.service' || true
-        sleep 10
-        ${ssh_command} resonance@${ip} 'journalctl _SYSTEMD_INVOCATION_ID=$(systemctl show --value -p InvocationID resonance.service) && systemctl status --no-pager resonance.service'
+        ${ssh_command} resonance@${ip} 'sudo systemctl start resonance.service && echo "$(resonance --version | head -n 1) started on $(hostname -s)"' || true
+      done
+    - |
+      for ip in ${target_ips}; do
+        ${ssh_command} resonance@${ip} 'journalctl _SYSTEMD_INVOCATION_ID=$(systemctl show --value -p InvocationID resonance.service) && systemctl status --no-pager resonance.service' || true
       done
