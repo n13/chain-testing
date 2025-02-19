@@ -46,12 +46,39 @@ testnet:
   script:
     - |
       for ip in ${target_ips}; do
-        ${ssh_command} resonance@${ip} 'systemctl is-active --quiet resonance.service && sudo systemctl stop resonance.service && sudo rm -rf /var/lib/resonance/chains && echo "$(resonance --version | head -n 1) stopped and reset on $(hostname -s)"' || true
+        ${ssh_command} resonance@${ip} '
+          if systemctl is-active --quiet resonance.service; then
+            if sudo systemctl stop resonance.service; then
+              echo "$(resonance --version | head -n 1) stopped on $(hostname -s)";
+            else
+              echo "failed to stop $(resonance --version | head -n 1) on $(hostname -s)";
+            fi;
+          else
+            echo "inactive $(resonance --version | head -n 1) observed on $(hostname -s)";
+          fi;
+          if sudo test -d /var/lib/resonance/chains; then
+            if sudo rm -rf /var/lib/resonance/chains; then
+              echo "$(resonance --version | head -n 1) purged on $(hostname -s)";
+            else
+              echo "failed to purge $(resonance --version | head -n 1) on $(hostname -s)";
+            fi;
+          else
+            echo "purged $(resonance --version | head -n 1) observed on $(hostname -s)";
+          fi;
+        ' || true
       done
     - |
       for ip in ${target_ips}; do
-        rsync --archive --compress --rsync-path='sudo rsync' --rsh "${ssh_command}" --verbose ./resonance resonance@${ip}:/usr/local/bin/resonance
-        ${ssh_command} resonance@${ip} 'sudo systemctl start resonance.service && echo "$(resonance --version | head -n 1) started on $(hostname -s)"' || true
+        if rsync --archive --compress --rsync-path='sudo rsync' --rsh "${ssh_command}" ./resonance resonance@${ip}:/usr/local/bin/resonance; then
+          echo "$(./resonance --version | head -n 1) deployed to ${ip}"
+        else
+          echo "failed to deploy $(./resonance --version | head -n 1) to ${ip}"
+        fi
+        ${ssh_command} resonance@${ip} '
+          if sudo systemctl start resonance.service; then
+            echo "$(resonance --version | head -n 1) started on $(hostname -s)";
+          fi;
+        ' || true
       done
     - |
       for ip in ${target_ips}; do
