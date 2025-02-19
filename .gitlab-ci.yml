@@ -45,8 +45,9 @@ testnet:
   script:
     - |
       for ip in 10.9.1.104 10.9.1.105 10.9.1.215; do
-        ${ssh_command} resonance@${ip} 'systemctl is-active --quiet resonance.service && sudo systemctl stop resonance.service' || true
+        ${ssh_command} resonance@${ip} 'systemctl is-active --quiet resonance.service && sudo systemctl stop resonance.service && sudo rm -rf /var/lib/resonance/chains' || true
         rsync --archive --compress --rsync-path='sudo rsync' --rsh "${ssh_command}" --verbose ./resonance resonance@${ip}:/usr/local/bin/resonance
         ${ssh_command} resonance@${ip} 'sudo systemctl start resonance.service' || true
         sleep 10
+        ${ssh_command} resonance@${ip} 'journalctl _SYSTEMD_INVOCATION_ID=$(systemctl show --value -p InvocationID resonance.service) && systemctl status --no-pager resonance.service'
       done
