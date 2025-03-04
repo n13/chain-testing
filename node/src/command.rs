@@ -12,7 +12,7 @@ use resonance_runtime::Keyring as ResonanceKeyring;
 
 impl SubstrateCli for Cli {
 	fn impl_name() -> String {
-		"Substrate Node".into()
+		"Resonance Node".into()
 	}
 
 	fn impl_version() -> String {
