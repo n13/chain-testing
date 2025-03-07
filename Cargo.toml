@@ -17,7 +17,6 @@ members = [
     "dilithium-crypto",
     "dilithium-crypto/verify", 
     "dilithium-crypto/sign", 
-    "tx-sdk",
 ]
 resolver = "2"
 
