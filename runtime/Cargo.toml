@@ -57,7 +57,7 @@ primitive-types = {default-features=false, workspace = true}
 sp-runtime-interface = { version="29.0.0", default-features=false }
 sp-std = { workspace = true, default-features=false}
 
-poseidon-resonance = { path = "../poseidon", default-features = false, features = ["serde"] }
+poseidon-resonance = { workspace = true, features = ["serde"] }
 
 [build-dependencies]
 substrate-wasm-builder = { optional = true, workspace = true, default-features = true }

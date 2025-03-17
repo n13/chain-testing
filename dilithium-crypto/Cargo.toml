@@ -15,7 +15,7 @@ verify = { path = "./verify", default-features = false }
 log = { workspace = true}
 sp-runtime-interface = { version="29.0.0", default-features=false }
 hdwallet = { path = "./hdwallet", default-features = false }
-poseidon-resonance = { path = "../poseidon", default-features = false }
+poseidon-resonance = { workspace = true }
 thiserror = { version = "2.0.12", default-features = false }
 
 [dev-dependencies]
