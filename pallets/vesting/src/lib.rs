@@ -16,19 +16,13 @@ pub mod pallet {
     use super::*;
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
-    use sp_runtime::generic::DigestItem;
     use codec::Decode;
     use sp_runtime::{
-        traits::{Saturating, AccountIdConversion, AtLeast32BitUnsigned, UniqueSaturatedInto, CheckedDiv},
-        Perbill,
+        traits::{Saturating, AccountIdConversion, CheckedDiv},
     };
-    use sp_arithmetic::RationalArg;
     use frame_support::traits::{
-        fungible::{DecreaseIssuance, IncreaseIssuance},
         Currency,
         Get,
-        Imbalance,
-        OnUnbalanced,
         ExistenceRequirement::{
             AllowDeath,
             KeepAlive
@@ -39,9 +33,7 @@ pub mod pallet {
         PalletId,
         BoundedVec
     };
-    use sp_arithmetic::MultiplyRational;
     use sp_std::convert::TryInto;
-
 
     #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
     pub struct VestingSchedule<AccountId, Balance, Moment> {
@@ -51,9 +43,7 @@ pub mod pallet {
         pub end: Moment,          // When vesting fully unlocks
         pub claimed: Balance,          // Tokens already claimed
     }
-
-    const MaxSchedules: u32 = 100;
-
+    
     #[pallet::storage]
     pub type VestingSchedules<T: Config> = StorageMap<
         _,
@@ -69,7 +59,25 @@ pub mod pallet {
         type PalletId: Get<PalletId>;
         #[pallet::constant]
         type MaxSchedules: Get<u32>;
+        type WeightInfo: WeightInfo;
     }
+
+    pub trait WeightInfo {
+        fn create_vesting_schedule() -> Weight;
+        fn claim() -> Weight;
+    }
+
+    pub struct DefaultWeightInfo;
+
+    impl WeightInfo for DefaultWeightInfo {
+        fn create_vesting_schedule() -> Weight {
+            Weight::from_parts(10_000, 0)
+        }
+        fn claim() -> Weight {
+            Weight::from_parts(10_000, 0)
+        }
+    }
+
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -92,7 +100,8 @@ pub mod pallet {
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         // Create a vesting schedule
-        #[pallet::weight(10_000)]
+        #[pallet::call_index(0)]
+        #[pallet::weight(<T as Config>::WeightInfo::create_vesting_schedule())]
         pub fn create_vesting_schedule(
             origin: OriginFor<T>,
             beneficiary: T::AccountId,
@@ -125,7 +134,8 @@ pub mod pallet {
         }
 
         // Claim vested tokens
-        #[pallet::weight(10_000)]
+        #[pallet::call_index(1)]
+        #[pallet::weight(<T as Config>::WeightInfo::claim())]
         pub fn claim(
             origin: OriginFor<T>,
         ) -> DispatchResult {
