@@ -1,9 +1,8 @@
 use frame_support::{assert_noop, assert_ok};
-use frame_support::dispatch::RawOrigin;
-use crate::{mock::*, Event, VestingSchedule};
-use frame_support::traits::Hooks;
-use frame_support::weights::Weight;
-use frame_system::Origin;
+use crate::{mock::*, VestingSchedule};
+use frame_support::traits::{Currency, ExistenceRequirement};
+use frame_support::traits::ExistenceRequirement::AllowDeath;
+use sp_runtime::{DispatchError, TokenError};
 use super::*;
 
 #[cfg(test)]
@@ -20,10 +19,9 @@ fn create_vesting_schedule<Moment: From<u64>>(start: u64, end: u64, amount: Bala
 #[test]
 fn test_vesting_before_start() {
     new_test_ext().execute_with(|| {
-        let origin = RuntimeOrigin::none();
         let schedule: VestingSchedule<u64, u128, u64> = create_vesting_schedule(100, 200, 1000);
         let now = 50; // Before vesting starts
-        pallet_timestamp::Pallet::<Test>::set(origin, now).expect("Cannot set time to now");
+        run_to_block(2, now);
 
         let vested: u128 = Pallet::<Test>::vested_amount(&schedule);
         assert_eq!(vested, 0);
@@ -35,7 +33,7 @@ fn test_vesting_after_end() {
     new_test_ext().execute_with(|| {
         let schedule: VestingSchedule<u64, u128, u64> = create_vesting_schedule(100, 200, 1000);
         let now = 250; // After vesting ends
-        pallet_timestamp::Pallet::<Test>::set(RuntimeOrigin::none(), now).expect("Cannot set time to now");
+        run_to_block(2, now);
 
         let vested: u128 = Pallet::<Test>::vested_amount(&schedule);
         assert_eq!(vested, 1000);
@@ -45,10 +43,9 @@ fn test_vesting_after_end() {
 #[test]
 fn test_vesting_halfway() {
     new_test_ext().execute_with(|| {
-        let origin = RuntimeOrigin::none();
         let schedule: VestingSchedule<u64, u128, u64> = create_vesting_schedule(100, 200, 1000);
         let now = 150; // Midway through vesting
-        pallet_timestamp::Pallet::<Test>::set(origin, now).expect("Cannot set time to now");
+        run_to_block(2, now);
 
         let vested: u128 = Pallet::<Test>::vested_amount(&schedule);
         assert_eq!(vested, 500); // 50% of 1000
@@ -58,10 +55,9 @@ fn test_vesting_halfway() {
 #[test]
 fn test_vesting_start_equals_end() {
     new_test_ext().execute_with(|| {
-        let origin = RuntimeOrigin::none();
         let schedule: VestingSchedule<u64, u128, u64> = create_vesting_schedule(100, 100, 1000);
         let now = 100; // Edge case: start == end
-        pallet_timestamp::Pallet::<Test>::set(origin, now).expect("Cannot set time to now");
+        run_to_block(2, now);
 
         let vested: u128 = Pallet::<Test>::vested_amount(&schedule);
         assert_eq!(vested, 1000); // Fully vested immediately
@@ -75,9 +71,6 @@ fn create_vesting_schedule_works() {
         let start = 1000; // 1 second from genesis
         let end = 2000;   // 2 seconds from genesis
         let amount = 500;
-
-        // Set timestamp to 0
-        pallet_timestamp::Pallet::<Test>::set(RuntimeOrigin::none(), 0).expect("Cannot set time to now");
 
         // Create a vesting schedule
         assert_ok!(Vesting::create_vesting_schedule(
@@ -110,13 +103,11 @@ fn create_vesting_schedule_works() {
 
 #[test]
 fn claim_vested_tokens_works() {
-    println!("waht");
     new_test_ext().execute_with(|| {
         let start = 1000;
         let end = 2000;
         let amount = 500;
 
-        println!("waht");
         // Create a vesting schedule
         assert_ok!(Vesting::create_vesting_schedule(
             RuntimeOrigin::signed(1),
@@ -125,10 +116,6 @@ fn claim_vested_tokens_works() {
             start,
             end
         ));
-
-        println!("waht");
-
-        pallet_timestamp::Pallet::<Test>::set(RuntimeOrigin::none(), 1).expect("Cannot set time");
 
         // Set timestamp to halfway through vesting (50% vested)
         run_to_block(5, 1500);
@@ -170,9 +157,6 @@ fn claim_before_vesting_fails() {
             end
         ));
 
-        // Set timestamp before vesting starts
-        pallet_timestamp::Pallet::<Test>::set(RuntimeOrigin::none(), 500).expect("Cannot set time to now");
-
         // Try to claim (should fail)
         assert_noop!(
             Vesting::claim(RuntimeOrigin::signed(2)),
@@ -211,5 +195,285 @@ fn too_many_schedules_fails() {
             ),
             Error::<Test>::TooManySchedules
         );
+    });
+}
+
+#[test]
+fn non_beneficiary_cannot_claim() {
+    new_test_ext().execute_with(|| {
+        let start = 1000;
+        let end = 2000;
+        let amount = 500;
+
+
+        // Start at block 1, timestamp 500
+        run_to_block(1, 500);
+
+        // Account 1 creates a vesting schedule for account 2
+        assert_ok!(Vesting::create_vesting_schedule(
+            RuntimeOrigin::signed(1),
+            2, // Beneficiary is account 2
+            amount,
+            start,
+            end
+        ));
+
+
+        // Advance to halfway through vesting (50% vested)
+        run_to_block(2, 1500);
+
+        // Account 3 (not the beneficiary) tries to claim
+        assert_noop!(
+            Vesting::claim(RuntimeOrigin::signed(3)),
+            Error::<Test>::NoVestingSchedule
+        );
+
+        // Ensure nothing was claimed
+        let schedules = VestingSchedules::<Test>::get(&2);
+        assert_eq!(schedules[0].claimed, 0);
+        assert_eq!(Balances::free_balance(2), 2000); // No change for beneficiary
+        assert_eq!(Balances::free_balance(Vesting::account_id()), 500); // Tokens still in pallet
+
+        // Beneficiary (account 2) can claim
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2)));
+        let schedules = VestingSchedules::<Test>::get(&2);
+        assert_eq!(schedules[0].claimed, 250); // 50% vested
+        assert_eq!(Balances::free_balance(2), 2250);
+    });
+}
+
+#[test]
+fn multiple_beneficiaries_claim_own_schedules() {
+    new_test_ext().execute_with(|| {
+        let start = 1000;
+        let end = 2000;
+        let amount = 500;
+
+
+        // Start at block 1, timestamp 500
+        run_to_block(1, 500);
+
+        // Account 1 creates a vesting schedule for account 2
+        assert_ok!(Vesting::create_vesting_schedule(
+            RuntimeOrigin::signed(1),
+            2,
+            amount,
+            start,
+            end
+        ));
+
+        // Account 1 creates a vesting schedule for account 3
+        assert_ok!(Vesting::create_vesting_schedule(
+            RuntimeOrigin::signed(1),
+            3,
+            amount,
+            start,
+            end
+        ));
+
+        // Advance to halfway through vesting (50% vested)
+        run_to_block(2, 1500);
+
+        // Account 2 claims their schedule
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2)));
+        let schedules_2 = VestingSchedules::<Test>::get(&2);
+        assert_eq!(schedules_2[0].claimed, 250); // 50% of 500
+        assert_eq!(Balances::free_balance(2), 2250);
+
+        // Account 3 claims their schedule
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(3)));
+        let schedules_3 = VestingSchedules::<Test>::get(&3);
+        assert_eq!(schedules_3[0].claimed, 250); // 50% of 500
+        assert_eq!(Balances::free_balance(3), 250); // 0 initial + 250 claimed
+
+        // Ensure account 2’s schedule is unaffected by account 3’s claim
+        let schedules_2 = VestingSchedules::<Test>::get(&2);
+        assert_eq!(schedules_2[0].claimed, 250); // Still only 250 claimed
+
+        // Total in pallet account should reflect both claims
+        assert_eq!(Balances::free_balance(Vesting::account_id()), 500); // 1000 - 250 - 250
+    });
+}
+
+#[test]
+fn zero_amount_schedule_fails() {
+    new_test_ext().execute_with(|| {
+
+        run_to_block(1, 500);
+
+        assert_noop!(
+            Vesting::create_vesting_schedule(
+                RuntimeOrigin::signed(1),
+                2,
+                0, // Zero amount
+                1000,
+                2000
+            ),
+            Error::<Test>::InvalidSchedule
+        );
+    });
+}
+
+#[test]
+fn claim_with_empty_pallet_fails() {
+    new_test_ext().execute_with(|| {
+        run_to_block(1, 500);
+
+        assert_ok!(Vesting::create_vesting_schedule(
+            RuntimeOrigin::signed(1),
+            2,
+            500,
+            1000,
+            2000
+        ));
+
+        // Drain the pallet account (simulate external interference)
+        assert_ok!(Balances::transfer(&Vesting::account_id(), &3, Balances::free_balance(Vesting::account_id()), ExistenceRequirement::AllowDeath));
+
+        run_to_block(2, 1500);
+
+        // Claim should fail due to insufficient funds in pallet
+        assert_noop!(
+            Vesting::claim(RuntimeOrigin::signed(2)),
+            DispatchError::Token(TokenError::FundsUnavailable)
+        );
+
+        let schedules = VestingSchedules::<Test>::get(&2);
+        assert_eq!(schedules[0].claimed, 0); // No tokens claimed
+    });
+}
+
+#[test]
+fn multiple_schedules_same_beneficiary() {
+    new_test_ext().execute_with(|| {
+        run_to_block(1, 500);
+
+        // Schedule 1: 500 tokens, 1000-2000
+        assert_ok!(Vesting::create_vesting_schedule(
+            RuntimeOrigin::signed(1),
+            2,
+            500,
+            1000,
+            2000
+        ));
+
+        // Schedule 2: 300 tokens, 1200-1800
+        assert_ok!(Vesting::create_vesting_schedule(
+            RuntimeOrigin::signed(1),
+            2,
+            300,
+            1200,
+            1800
+        ));
+
+        // At 1500: Schedule 1 is 50% (250), Schedule 2 is 50% (150)
+        run_to_block(2, 1500);
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2)));
+
+        let schedules = VestingSchedules::<Test>::get(&2);
+        assert_eq!(schedules.len(), 2);
+        assert_eq!(schedules[0].claimed, 250); // Schedule 1
+        assert_eq!(schedules[1].claimed, 150); // Schedule 2
+        assert_eq!(Balances::free_balance(2), 2400); // 2000 + 250 + 150
+
+        // At 2000: Schedule 1 is 100% (500), Schedule 2 is 100% (300)
+        run_to_block(3, 2000);
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2)));
+
+        let schedules = VestingSchedules::<Test>::get(&2);
+        assert_eq!(schedules[0].claimed, 500);
+        assert_eq!(schedules[1].claimed, 300);
+        assert_eq!(Balances::free_balance(2), 2800); // 2000 + 500 + 300
+    });
+}
+
+#[test]
+fn small_time_window_vesting() {
+    new_test_ext().execute_with(|| {
+        run_to_block(1, 500);
+
+        assert_ok!(Vesting::create_vesting_schedule(
+            RuntimeOrigin::signed(1),
+            2,
+            500,
+            1000,
+            1001 // 1ms duration
+        ));
+
+        run_to_block(2, 1000);
+        assert_noop!(
+            Vesting::claim(RuntimeOrigin::signed(2)),
+            Error::<Test>::NothingToClaim
+        );
+        let schedules = VestingSchedules::<Test>::get(&2);
+        assert_eq!(schedules[0].claimed, 0); // Not yet vested
+
+        run_to_block(3, 1001);
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2)));
+        let schedules = VestingSchedules::<Test>::get(&2);
+        assert_eq!(schedules[0].claimed, 500); // Fully vested
+    });
+}
+
+#[test]
+fn vesting_near_max_timestamp() {
+    new_test_ext().execute_with(|| {
+        let max = u64::MAX;
+        run_to_block(1, max - 1000);
+
+        assert_ok!(Vesting::create_vesting_schedule(
+            RuntimeOrigin::signed(1),
+            2,
+            500,
+            max - 500,
+            max
+        ));
+
+        run_to_block(2, max - 250); // Halfway
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2)));
+        let schedules = VestingSchedules::<Test>::get(&2);
+        assert_eq!(schedules[0].claimed, 250); // 50% vested
+
+        run_to_block(3, max);
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2)));
+        let schedules = VestingSchedules::<Test>::get(&2);
+        assert_eq!(schedules[0].claimed, 500);
+    });
+}
+
+#[test]
+fn creator_insufficient_funds_fails() {
+    new_test_ext().execute_with(|| {
+        // Give account 4 a small balance (less than amount + ED)
+        assert_ok!(Balances::transfer(&Vesting::account_id(), &3, Balances::free_balance(Vesting::account_id()), ExistenceRequirement::AllowDeath));
+
+        assert_ok!(Balances::transfer(
+            &1,
+            &4,
+            5, // Only 5 tokens, not enough for 10 + ED
+            AllowDeath
+        ));
+
+        run_to_block(1, 500);
+
+        // Account 4 tries to create a vesting schedule with insufficient funds
+        assert_noop!(
+            Vesting::create_vesting_schedule(
+                RuntimeOrigin::signed(4),
+                2,
+                10, // Amount greater than 4’s balance minus ED
+                1000,
+                2000
+            ),
+            DispatchError::Token(TokenError::FundsUnavailable)
+        );
+
+        // Ensure no schedule was created
+        let schedules = VestingSchedules::<Test>::get(&2);
+        assert!(schedules.is_empty());
+
+        // Check balances
+        assert_eq!(Balances::free_balance(4), 5); // No change
+        assert_eq!(Balances::free_balance(Vesting::account_id()), 0); // Nothing transferred
     });
 }

@@ -132,6 +132,8 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 
     let mut ext = sp_io::TestExternalities::new(t);
     ext.execute_with(|| System::set_block_number(1)); // Start at block 1
+    ext.execute_with(|| pallet_timestamp::Pallet::<Test>::set(RuntimeOrigin::none(), 5).expect("Cannot set time to now")); // Start at block 1
+
     ext
 }
 
