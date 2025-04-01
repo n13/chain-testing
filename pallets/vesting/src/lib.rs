@@ -10,6 +10,9 @@ mod tests;
 
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
+mod weights;
+pub use weights::*;
+
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -17,33 +20,33 @@ pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
     use codec::Decode;
-    use sp_runtime::{
-        traits::{Saturating, AccountIdConversion, CheckedDiv},
-    };
+    use sp_runtime::traits::{AccountIdConversion, CheckedDiv, Saturating};
     use frame_support::traits::{
         Currency,
-        Get,
         ExistenceRequirement::{
             AllowDeath,
             KeepAlive
         },
+        Get,
     };
     use frame_support::{
         parameter_types,
-        PalletId,
-        BoundedVec
+        BoundedVec,
+        PalletId
     };
     use sp_std::convert::TryInto;
 
     #[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
     pub struct VestingSchedule<AccountId, Balance, Moment> {
+        pub id: u64,                   // Unique id
+        pub creator: AccountId,        // Who created the scehdule
         pub beneficiary: AccountId,    // Who gets the tokens
         pub amount: Balance,           // Total tokens to vest
         pub start: Moment,        // When vesting begins
         pub end: Moment,          // When vesting fully unlocks
         pub claimed: Balance,          // Tokens already claimed
     }
-    
+
     #[pallet::storage]
     pub type VestingSchedules<T: Config> = StorageMap<
         _,
@@ -52,6 +55,9 @@ pub mod pallet {
         BoundedVec<VestingSchedule<T::AccountId, T::Balance, T::Moment>, T::MaxSchedules>,
         ValueQuery
     >;
+
+    #[pallet::storage]
+    pub type ScheduleCounter<T: Config> = StorageValue<_, u64, ValueQuery>;
 
     #[pallet::config]
     pub trait Config: frame_system::Config + pallet_balances::Config + pallet_timestamp::Config {
@@ -62,36 +68,21 @@ pub mod pallet {
         type WeightInfo: WeightInfo;
     }
 
-    pub trait WeightInfo {
-        fn create_vesting_schedule() -> Weight;
-        fn claim() -> Weight;
-    }
-
-    pub struct DefaultWeightInfo;
-
-    impl WeightInfo for DefaultWeightInfo {
-        fn create_vesting_schedule() -> Weight {
-            Weight::from_parts(10_000, 0)
-        }
-        fn claim() -> Weight {
-            Weight::from_parts(10_000, 0)
-        }
-    }
-
-
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
-        VestingScheduleCreated(T::AccountId, T::Balance, T::Moment, T::Moment),
+        VestingScheduleCreated(T::AccountId, T::Balance, T::Moment, T::Moment, u64),
         TokensClaimed(T::AccountId, T::Balance),
+        VestingScheduleCancelled(T::AccountId, u64), // Creator, Schedule ID
     }
 
     #[pallet::error]
     pub enum Error<T> {
         NoVestingSchedule,      // No schedule exists for the caller
-        NothingToClaim,         // No tokens available to claim yet
         InvalidSchedule,        // Start block >= end block
         TooManySchedules,       // Exceeded maximum number of schedules
+        NotCreator,             // Caller isn’t the creator
+        ScheduleNotFound,       // No schedule with that ID
     }
 
     #[pallet::pallet]
@@ -109,7 +100,7 @@ pub mod pallet {
             start: T::Moment,
             end: T::Moment,
         ) -> DispatchResult {
-            let who = ensure_signed(origin)?; // Caller (e.g., admin)
+            let who = ensure_signed(origin)?;
 
             ensure!(start < end, Error::<T>::InvalidSchedule);
             ensure!(amount > T::Balance::zero(), Error::<T>::InvalidSchedule);
@@ -117,19 +108,25 @@ pub mod pallet {
             // Transfer tokens from caller to pallet and lock them
             pallet_balances::Pallet::<T>::transfer(&who, &Self::account_id(), amount, KeepAlive)?;
 
+            // Generate unique ID
+            let schedule_id = ScheduleCounter::<T>::get().wrapping_add(1);
+            ScheduleCounter::<T>::put(schedule_id);
+
             // Add the schedule to storage
             let schedule = VestingSchedule {
+                creator: who,
                 beneficiary: beneficiary.clone(),
                 amount,
                 start,
                 end,
                 claimed: T::Balance::zero(),
+                id: schedule_id,
             };
             VestingSchedules::<T>::try_mutate(&beneficiary, |schedules| {
                 schedules.try_push(schedule).map_err(|_| Error::<T>::TooManySchedules)
             })?;
 
-            Self::deposit_event(Event::VestingScheduleCreated(beneficiary, amount, start, end));
+            Self::deposit_event(Event::VestingScheduleCreated(beneficiary, amount, start, end, schedule_id));
             Ok(())
         }
 
@@ -137,16 +134,16 @@ pub mod pallet {
         #[pallet::call_index(1)]
         #[pallet::weight(<T as Config>::WeightInfo::claim())]
         pub fn claim(
-            origin: OriginFor<T>,
+            _origin: OriginFor<T>,
+            beneficiary: T::AccountId,
         ) -> DispatchResult {
-            let who = ensure_signed(origin)?;
-            let schedules = VestingSchedules::<T>::get(&who);
+            let schedules = VestingSchedules::<T>::get(&beneficiary);
             ensure!(!schedules.is_empty(), Error::<T>::NoVestingSchedule);
 
             let mut total_claimable = T::Balance::zero();
 
             // Calculate claimable amount and update claimed amounts in storage
-            VestingSchedules::<T>::mutate(&who, |schedules| {
+            VestingSchedules::<T>::mutate(&beneficiary, |schedules| {
                 for schedule in schedules.iter_mut() {
                     let vested = Self::vested_amount(&schedule);
                     let claimable = vested - schedule.claimed;
@@ -157,12 +154,63 @@ pub mod pallet {
                 }
             });
 
-            ensure!(total_claimable > T::Balance::zero(), Error::<T>::NothingToClaim);
+            if total_claimable > T::Balance::zero() {
+                // Transfer claimable tokens
+                pallet_balances::Pallet::<T>::transfer(&Self::account_id(), &beneficiary, total_claimable, AllowDeath)?;
 
-            // Transfer claimable tokens
-            pallet_balances::Pallet::<T>::transfer(&Self::account_id(), &who, total_claimable, AllowDeath)?;
+                Self::deposit_event(Event::TokensClaimed(beneficiary, total_claimable));
+            }
 
-            Self::deposit_event(Event::TokensClaimed(who, total_claimable));
+            Ok(())
+        }
+
+        #[pallet::call_index(2)]
+        #[pallet::weight(<T as Config>::WeightInfo::cancel_vesting_schedule())]
+        pub fn cancel_vesting_schedule(
+            origin: OriginFor<T>,
+            beneficiary: T::AccountId,
+            schedule_id: u64,
+        ) -> DispatchResult {
+            let who = ensure_signed(origin.clone())?;
+
+            // Claim for beneficiary whatever they are currently owed
+            Self::claim(origin, beneficiary.clone())?;
+
+            // Get the beneficiary’s schedules
+            let mut schedules = VestingSchedules::<T>::get(&beneficiary);
+            ensure!(!schedules.is_empty(), Error::<T>::NoVestingSchedule);
+
+            // Find the schedule by ID
+            let index = schedules
+                .iter()
+                .position(|s| s.id == schedule_id)
+                .ok_or(Error::<T>::ScheduleNotFound)?;
+
+            // Ensure the caller is the creator
+            let schedule = &schedules[index];
+            ensure!(schedule.creator == who, Error::<T>::NotCreator);
+
+            // Refund unclaimed amount to the creator
+            let unclaimed = schedule.amount.saturating_sub(schedule.claimed);
+            if unclaimed > T::Balance::zero() {
+                pallet_balances::Pallet::<T>::transfer(
+                    &Self::account_id(),
+                    &who,
+                    unclaimed,
+                    AllowDeath,
+                )?;
+            }
+
+            // Remove the schedule
+            schedules.remove(index);
+            if schedules.is_empty() {
+                VestingSchedules::<T>::remove(&beneficiary);
+            } else {
+                VestingSchedules::<T>::insert(&beneficiary, schedules);
+            }
+
+            // Emit event
+            Self::deposit_event(Event::VestingScheduleCancelled(who, schedule_id));
             Ok(())
         }
     }

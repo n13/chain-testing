@@ -1,7 +1,7 @@
 // pallets/vesting/src/mock.rs
 use frame_support::{
     parameter_types,
-    traits::{ConstU32, ConstU64, GenesisBuild},
+    traits::{ConstU32, ConstU64},
     PalletId,
 };
 use frame_support::__private::sp_io;
@@ -116,6 +116,7 @@ impl pallet_vesting::Config for Test {
     // type Moment = u64;
     // type Balance = u128;
     type MaxSchedules = MaxSchedules;
+    type WeightInfo = ();
 }
 
 // Helper to build genesis storage
