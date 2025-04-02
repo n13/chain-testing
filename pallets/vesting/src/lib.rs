@@ -21,7 +21,7 @@ pub mod pallet {
     use frame_system::pallet_prelude::*;
     use codec::Decode;
     use sp_runtime::{
-        traits::{AccountIdConversion, CheckedDiv, Saturating},
+        traits::{AccountIdConversion, Saturating},
         ArithmeticError
     };
     use frame_support::traits::{

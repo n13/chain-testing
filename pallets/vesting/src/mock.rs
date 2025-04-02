@@ -1,19 +1,16 @@
 // pallets/vesting/src/mock.rs
 use frame_support::{
     parameter_types,
-    traits::{ConstU32, ConstU64},
+    traits::{ConstU32},
     PalletId,
 };
 use frame_support::__private::sp_io;
 use frame_support::traits::Hooks;
-use frame_system as system;
 use sp_runtime::testing::H256;
-use sp_runtime::{testing::Header, traits::{BlakeTwo256, IdentityLookup}, BuildStorage};
+use sp_runtime::{traits::{BlakeTwo256, IdentityLookup}, BuildStorage};
 use sp_std::convert::{TryFrom, TryInto};
 
 use crate as pallet_vesting; // Your pallet
-
-type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
 
 // Define the test runtime
 frame_support::construct_runtime!(
