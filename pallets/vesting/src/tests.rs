@@ -25,7 +25,7 @@ fn test_vesting_before_start() {
         let now = 50; // Before vesting starts
         run_to_block(2, now);
 
-        let vested: u128 = Pallet::<Test>::vested_amount(&schedule);
+        let vested: u128 = Pallet::<Test>::vested_amount(&schedule).expect("Unable to compute vested amount");
         assert_eq!(vested, 0);
     });
 }
@@ -37,7 +37,7 @@ fn test_vesting_after_end() {
         let now = 250; // After vesting ends
         run_to_block(2, now);
 
-        let vested: u128 = Pallet::<Test>::vested_amount(&schedule);
+        let vested: u128 = Pallet::<Test>::vested_amount(&schedule).expect("Unable to compute vested amount");
         assert_eq!(vested, 1000);
     });
 }
@@ -49,7 +49,7 @@ fn test_vesting_halfway() {
         let now = 150; // Midway through vesting
         run_to_block(2, now);
 
-        let vested: u128 = Pallet::<Test>::vested_amount(&schedule);
+        let vested: u128 = Pallet::<Test>::vested_amount(&schedule).expect("Unable to compute vested amount");
         assert_eq!(vested, 500); // 50% of 1000
     });
 }
@@ -61,7 +61,7 @@ fn test_vesting_start_equals_end() {
         let now = 100; // Edge case: start == end
         run_to_block(2, now);
 
-        let vested: u128 = Pallet::<Test>::vested_amount(&schedule);
+        let vested: u128 = Pallet::<Test>::vested_amount(&schedule).expect("Unable to compute vested amount");
         assert_eq!(vested, 1000); // Fully vested immediately
     });
 }
@@ -272,7 +272,7 @@ fn multiple_beneficiaries_claim_own_schedules() {
             end
         ));
 
-        // Advance to halfway through vesting (50% vested)
+        // Advancpub(crate)e to halfway through vesting (50% vested)
         run_to_block(2, 1500);
 
         // Account 2 claims their schedule

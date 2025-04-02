@@ -20,7 +20,10 @@ pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
     use codec::Decode;
-    use sp_runtime::traits::{AccountIdConversion, CheckedDiv, Saturating};
+    use sp_runtime::{
+        traits::{AccountIdConversion, CheckedDiv, Saturating},
+        ArithmeticError
+    };
     use frame_support::traits::{
         Currency,
         ExistenceRequirement::{
@@ -140,17 +143,25 @@ pub mod pallet {
             let schedules = VestingSchedules::<T>::get(&beneficiary);
             ensure!(!schedules.is_empty(), Error::<T>::NoVestingSchedule);
 
-            let mut total_claimable = T::Balance::zero();
+            // Collect vested amounts
+            let mut vested_amounts: Vec<(usize, T::Balance)> = Vec::new();
+            for (index, schedule) in schedules.iter().enumerate() {
+                let vested = Self::vested_amount(&schedule)?;
+                let claimable = vested.saturating_sub(schedule.claimed);
+                if claimable > T::Balance::zero() {
+                    vested_amounts.push((index, claimable));
+                }
+            }
 
-            // Calculate claimable amount and update claimed amounts in storage
+            // Calculate total claimable
+            let total_claimable = vested_amounts
+                .iter()
+                .fold(T::Balance::zero(), |acc, &(_, amount)| acc + amount);
+
+            // Mutate schedules and transfer
             VestingSchedules::<T>::mutate(&beneficiary, |schedules| {
-                for schedule in schedules.iter_mut() {
-                    let vested = Self::vested_amount(&schedule);
-                    let claimable = vested - schedule.claimed;
-                    if claimable > T::Balance::zero() {
-                        schedule.claimed += claimable.clone();
-                        total_claimable += claimable;
-                    }
+                for (index, claimable) in vested_amounts {
+                    schedules[index].claimed += claimable;
                 }
             });
 
@@ -219,48 +230,38 @@ pub mod pallet {
         // Helper to calculate vested amount
         pub fn vested_amount(
             schedule: &VestingSchedule<T::AccountId, T::Balance, T::Moment>,
-        ) -> T::Balance {
+        ) -> Result<T::Balance, DispatchError> {
             let now = <pallet_timestamp::Pallet<T>>::get();
-
-            // Safely convert `T::Moment` to `u64`
-            let now_u64: u64 = match now.try_into() {
-                Ok(n) => n,
-                Err(_) => return T::Balance::zero(),
-            };
-            let start_u64: u64 = match schedule.start.try_into() {
-                Ok(s) => s,
-                Err(_) => return T::Balance::zero(),
-            };
-            let end_u64: u64 = match schedule.end.try_into() {
-                Ok(e) => e,
-                Err(_) => return T::Balance::zero(),
-            };
-
-            if now_u64 < start_u64 {
-                T::Balance::zero()
-            } else if now_u64 >= end_u64 {
-                schedule.amount
+            // No need to convert now/start/end to u64 explicitly if T::Moment is u64-like
+            if now < schedule.start {
+                Ok(T::Balance::zero())
+            } else if now >= schedule.end {
+                Ok(schedule.amount)
             } else {
-                let elapsed = now_u64.saturating_sub(start_u64);
-                let duration = end_u64.saturating_sub(start_u64).max(1);
+                let elapsed = now.saturating_sub(schedule.start);
+                let duration = schedule.end.saturating_sub(schedule.start);
 
-                // Safely convert elapsed and duration to `T::Balance`
-                let elapsed_balance: T::Balance = match elapsed.try_into() {
-                    Ok(e) => e,
-                    Err(_) => return T::Balance::zero(),
-                };
-                let duration_balance: T::Balance = match duration.try_into() {
-                    Ok(d) => d,
-                    Err(_) => return T::Balance::zero(),
-                };
+                // Convert amount to u64 for intermediate calculation
+                let amount_u64: u64 = schedule.amount.try_into()
+                    .map_err(|_| DispatchError::Other("Balance to u64 conversion failed"))?;
 
-                // Linear vesting calculation with better precision
-                schedule
-                    .amount
-                    .saturating_mul(elapsed_balance)
-                    .checked_div(&duration_balance.max(T::Balance::one()))
-                    .unwrap_or_else(T::Balance::zero)
+                // Perform calculation in u64 (T::Moment-like)
+                let elapsed_u64: u64 = elapsed.try_into()
+                    .map_err(|_| DispatchError::Other("Moment to u64 conversion failed"))?;
+                let duration_u64: u64 = duration.try_into()
+                    .map_err(|_| DispatchError::Other("Moment to u64 conversion failed"))?;
+                let duration_safe: u64 = duration_u64.max(1);
 
+                let vested_u64: u64 = amount_u64
+                    .saturating_mul(elapsed_u64)
+                    .checked_div(duration_safe)
+                    .ok_or(DispatchError::Arithmetic(ArithmeticError::Underflow))?;
+
+                // Convert back to T::Balance
+                let vested = T::Balance::try_from(vested_u64)
+                    .map_err(|_| DispatchError::Other("u64 to Balance conversion failed"))?;
+
+                Ok(vested)
             }
         }
 
