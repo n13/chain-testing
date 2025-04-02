@@ -7706,6 +7706,7 @@ dependencies = [
  "pallet-timestamp",
  "pallet-transaction-payment",
  "pallet-transaction-payment-rpc-runtime-api",
+ "pallet-vesting",
  "pallet-wormhole",
  "parity-scale-codec",
  "poseidon-resonance",
