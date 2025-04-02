@@ -34,7 +34,6 @@ pub mod pallet {
     };
     use frame_support::{
         parameter_types,
-        BoundedVec,
         PalletId
     };
     use sp_std::convert::TryInto;
