@@ -110,9 +110,6 @@ parameter_types! {
 impl pallet_vesting::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type PalletId = VestingPalletId;
-    // type Moment = u64;
-    // type Balance = u128;
-    type MaxSchedules = MaxSchedules;
     type WeightInfo = ();
 }
 

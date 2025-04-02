@@ -1,6 +1,6 @@
 use frame_support::{assert_noop, assert_ok};
 use crate::{mock::*, VestingSchedule};
-use frame_support::traits::{Currency, ExistenceRequirement};
+use frame_support::traits::{Currency, ExistenceRequirement, Len};
 use frame_support::traits::ExistenceRequirement::AllowDeath;
 use sp_runtime::{DispatchError, TokenError};
 use super::*;
@@ -84,10 +84,11 @@ fn create_vesting_schedule_works() {
         ));
 
         // Check storage
-        let schedules = VestingSchedules::<Test>::get(&2);
-        assert_eq!(schedules.len(), 1);
+        let schedule = VestingSchedules::<Test>::get(1).expect("Schedule should exist");
+        let num_vesting_schedules = ScheduleCounter::<Test>::get();
+        assert_eq!(num_vesting_schedules, 1);
         assert_eq!(
-            schedules[0],
+            schedule,
             VestingSchedule {
                 creator: 1,
                 beneficiary: 2,
@@ -125,21 +126,21 @@ fn claim_vested_tokens_works() {
         run_to_block(5, 1500);
 
         // Claim tokens
-        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 2));
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 1));
 
         // Check claimed amount (50% of 500 = 250)
-        let schedules = VestingSchedules::<Test>::get(&2);
-        assert_eq!(schedules[0].claimed, 250);
+        let schedule = VestingSchedules::<Test>::get(1).expect("Schedule should exist");
+        assert_eq!(schedule.claimed, 250);
         assert_eq!(Balances::free_balance(2), 2250); // 2000 initial + 250 claimed
         assert_eq!(Balances::free_balance(Vesting::account_id()), 250); // Remaining in pallet
 
         // Claim again at end
         run_to_block(6, 2000);
-        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 2));
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 1));
 
         // Check full claim
-        let schedules = VestingSchedules::<Test>::get(&2);
-        assert_eq!(schedules[0].claimed, 500);
+        let schedule = VestingSchedules::<Test>::get(1).expect("Schedule should exist");
+        assert_eq!(schedule.claimed, 500);
         assert_eq!(Balances::free_balance(2), 2500); // All 500 claimed
         assert_eq!(Balances::free_balance(Vesting::account_id()), 0); // Pallet empty
     });
@@ -162,40 +163,12 @@ fn claim_before_vesting_fails() {
         ));
 
         // Try to claim (should not do anything)
-        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 2));
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 1));
 
         // Check no changes
-        let schedules = VestingSchedules::<Test>::get(&2);
-        assert_eq!(schedules[0].claimed, 0);
+        let schedule = VestingSchedules::<Test>::get(1).expect("Schedule should exist");
+        assert_eq!(schedule.claimed, 0);
         assert_eq!(Balances::free_balance(2), 2000); // No tokens claimed
-    });
-}
-
-#[test]
-fn too_many_schedules_fails() {
-    new_test_ext().execute_with(|| {
-        // Fill up schedules to the max (100)
-        for i in 0..MaxSchedules::get() {
-            assert_ok!(Vesting::create_vesting_schedule(
-                RuntimeOrigin::signed(1),
-                2,
-                10,
-                1000 + i as u64,
-                2000 + i as u64
-            ));
-        }
-
-        // Try to add one more
-        assert_noop!(
-            Vesting::create_vesting_schedule(
-                RuntimeOrigin::signed(1),
-                2,
-                10,
-                3000,
-                4000
-            ),
-            Error::<Test>::TooManySchedules
-        );
     });
 }
 
@@ -230,15 +203,15 @@ fn non_beneficiary_cannot_claim() {
         );
 
         // Ensure nothing was claimed
-        let schedules = VestingSchedules::<Test>::get(&2);
-        assert_eq!(schedules[0].claimed, 0);
+        let schedule = VestingSchedules::<Test>::get(1).expect("Schedule should exist");
+        assert_eq!(schedule.claimed, 0);
         assert_eq!(Balances::free_balance(2), 2000); // No change for beneficiary
         assert_eq!(Balances::free_balance(Vesting::account_id()), 500); // Tokens still in pallet
 
         // Beneficiary (account 2) can claim
-        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 2));
-        let schedules = VestingSchedules::<Test>::get(&2);
-        assert_eq!(schedules[0].claimed, 250); // 50% vested
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 1));
+        let schedule = VestingSchedules::<Test>::get(1).expect("Schedule should exist");
+        assert_eq!(schedule.claimed, 250); // 50% vested
         assert_eq!(Balances::free_balance(2), 2250);
     });
 }
@@ -272,24 +245,24 @@ fn multiple_beneficiaries_claim_own_schedules() {
             end
         ));
 
-        // Advancpub(crate)e to halfway through vesting (50% vested)
+        // Advance to halfway through vesting (50% vested)
         run_to_block(2, 1500);
 
         // Account 2 claims their schedule
-        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 2));
-        let schedules_2 = VestingSchedules::<Test>::get(&2);
-        assert_eq!(schedules_2[0].claimed, 250); // 50% of 500
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 1));
+        let schedule2 = VestingSchedules::<Test>::get(1).expect("Schedule should exist");
+        assert_eq!(schedule2.claimed, 250); // 50% of 500
         assert_eq!(Balances::free_balance(2), 2250);
 
         // Account 3 claims their schedule
-        assert_ok!(Vesting::claim(RuntimeOrigin::signed(3), 3));
-        let schedules_3 = VestingSchedules::<Test>::get(&3);
-        assert_eq!(schedules_3[0].claimed, 250); // 50% of 500
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(3), 2));
+        let schedule3 = VestingSchedules::<Test>::get(2).expect("Schedule should exist");
+        assert_eq!(schedule3.claimed, 250); // 50% of 500
         assert_eq!(Balances::free_balance(3), 250); // 0 initial + 250 claimed
 
         // Ensure account 2’s schedule is unaffected by account 3’s claim
-        let schedules_2 = VestingSchedules::<Test>::get(&2);
-        assert_eq!(schedules_2[0].claimed, 250); // Still only 250 claimed
+        let schedule2 = VestingSchedules::<Test>::get(1).expect("Schedule should exist");
+        assert_eq!(schedule2.claimed, 250); // Still only 250 claimed
 
         // Total in pallet account should reflect both claims
         assert_eq!(Balances::free_balance(Vesting::account_id()), 500); // 1000 - 250 - 250
@@ -335,12 +308,12 @@ fn claim_with_empty_pallet_fails() {
 
         // Claim should fail due to insufficient funds in pallet
         assert_noop!(
-            Vesting::claim(RuntimeOrigin::signed(2), 2),
+            Vesting::claim(RuntimeOrigin::signed(2), 1),
             DispatchError::Token(TokenError::FundsUnavailable)
         );
 
-        let schedules = VestingSchedules::<Test>::get(&2);
-        assert_eq!(schedules[0].claimed, 0); // No tokens claimed
+        let schedule = VestingSchedules::<Test>::get(1).expect("Schedule should exist");
+        assert_eq!(schedule.claimed, 0); // No tokens claimed
     });
 }
 
@@ -369,21 +342,26 @@ fn multiple_schedules_same_beneficiary() {
 
         // At 1500: Schedule 1 is 50% (250), Schedule 2 is 50% (150)
         run_to_block(2, 1500);
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 1));
         assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 2));
 
-        let schedules = VestingSchedules::<Test>::get(&2);
-        assert_eq!(schedules.len(), 2);
-        assert_eq!(schedules[0].claimed, 250); // Schedule 1
-        assert_eq!(schedules[1].claimed, 150); // Schedule 2
+        let schedule1 = VestingSchedules::<Test>::get(1).expect("Schedule should exist");
+        let schedule2 = VestingSchedules::<Test>::get(2).expect("Schedule should exist");
+        let num_schedules = ScheduleCounter::<Test>::get();
+        assert_eq!(num_schedules, 2);
+        assert_eq!(schedule1.claimed, 250); // Schedule 1
+        assert_eq!(schedule2.claimed, 150); // Schedule 2
         assert_eq!(Balances::free_balance(2), 2400); // 2000 + 250 + 150
 
         // At 2000: Schedule 1 is 100% (500), Schedule 2 is 100% (300)
         run_to_block(3, 2000);
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 1));
         assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 2));
 
-        let schedules = VestingSchedules::<Test>::get(&2);
-        assert_eq!(schedules[0].claimed, 500);
-        assert_eq!(schedules[1].claimed, 300);
+        let schedule1 = VestingSchedules::<Test>::get(1).expect("Schedule should exist");
+        let schedule2 = VestingSchedules::<Test>::get(2).expect("Schedule should exist");
+        assert_eq!(schedule1.claimed, 500);
+        assert_eq!(schedule2.claimed, 300);
         assert_eq!(Balances::free_balance(2), 2800); // 2000 + 500 + 300
     });
 }
@@ -402,14 +380,14 @@ fn small_time_window_vesting() {
         ));
 
         run_to_block(2, 1000);
-        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 2));
-        let schedules = VestingSchedules::<Test>::get(&2);
-        assert_eq!(schedules[0].claimed, 0); // Not yet vested
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 1));
+        let schedule = VestingSchedules::<Test>::get(1).expect("Schedule should exist");
+        assert_eq!(schedule.claimed, 0); // Not yet vested
 
         run_to_block(3, 1001);
-        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 2));
-        let schedules = VestingSchedules::<Test>::get(&2);
-        assert_eq!(schedules[0].claimed, 500); // Fully vested
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 1));
+        let schedule = VestingSchedules::<Test>::get(1).expect("Schedule should exist");
+        assert_eq!(schedule.claimed, 500); // Fully vested
     });
 }
 
@@ -428,14 +406,14 @@ fn vesting_near_max_timestamp() {
         ));
 
         run_to_block(2, max - 250); // Halfway
-        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 2));
-        let schedules = VestingSchedules::<Test>::get(&2);
-        assert_eq!(schedules[0].claimed, 250); // 50% vested
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 1));
+        let schedule = VestingSchedules::<Test>::get(&1).expect("Schedule should exist");
+        assert_eq!(schedule.claimed, 250); // 50% vested
 
         run_to_block(3, max);
-        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 2));
-        let schedules = VestingSchedules::<Test>::get(&2);
-        assert_eq!(schedules[0].claimed, 500);
+        assert_ok!(Vesting::claim(RuntimeOrigin::signed(2), 1));
+        let schedule = VestingSchedules::<Test>::get(&1).expect("Schedule should exist");
+        assert_eq!(schedule.claimed, 500);
     });
 }
 
@@ -467,8 +445,8 @@ fn creator_insufficient_funds_fails() {
         );
 
         // Ensure no schedule was created
-        let schedules = VestingSchedules::<Test>::get(&2);
-        assert!(schedules.is_empty());
+        let schedule = VestingSchedules::<Test>::get(&1);
+        assert_eq!(schedule, None);
 
         // Check balances
         assert_eq!(Balances::free_balance(4), 5); // No change
@@ -494,13 +472,12 @@ fn creator_can_cancel_schedule() {
         // Creator (account 1) cancels the schedule
         assert_ok!(Vesting::cancel_vesting_schedule(
             RuntimeOrigin::signed(1),
-            2,
             1 // First schedule ID
         ));
 
         // Schedule is gone
-        let schedules = VestingSchedules::<Test>::get(&2);
-        assert!(schedules.is_empty());
+        let schedule = VestingSchedules::<Test>::get(1);
+        assert_eq!(schedule, None);
         assert_eq!(Balances::free_balance(1), 99750); // 100000 - 500 + 250 refunded
         assert_eq!(Balances::free_balance(2), 2250); // 2000 + 250 claimed
         assert_eq!(Balances::free_balance(Vesting::account_id()), 0);
@@ -524,16 +501,16 @@ fn non_creator_cannot_cancel() {
         assert_noop!(
             Vesting::cancel_vesting_schedule(
                 RuntimeOrigin::signed(3),
-                2,
                 1
             ),
             Error::<Test>::NotCreator
         );
 
         // Schedule still exists
-        let schedules = VestingSchedules::<Test>::get(&2);
-        assert_eq!(schedules.len(), 1);
-        assert_eq!(schedules[0].creator, 1);
+        let schedule = VestingSchedules::<Test>::get(&1).expect("Schedule should exist");
+        let num_schedules = ScheduleCounter::<Test>::get();
+        assert_eq!(num_schedules, 1);
+        assert_eq!(schedule.creator, 1);
     });
 }
 
@@ -555,13 +532,12 @@ fn creator_can_cancel_after_end() {
         // Creator (account 1) cancels the schedule
         assert_ok!(Vesting::cancel_vesting_schedule(
             RuntimeOrigin::signed(1),
-            2,
             1 // First schedule ID
         ));
 
         // Schedule is gone
-        let schedules = VestingSchedules::<Test>::get(&2);
-        assert!(schedules.is_empty());
+        let schedule1 = VestingSchedules::<Test>::get(1);
+        assert_eq!(schedule1, None);
         assert_eq!(Balances::free_balance(1), 99500); // 100000 - 500
         assert_eq!(Balances::free_balance(2), 2500); // 2000 + 250 claimed
         assert_eq!(Balances::free_balance(Vesting::account_id()), 0);
