@@ -64,6 +64,11 @@ impl<T: pallet_reversible_txs::Config + Send + Sync + alloc::fmt::Debug>
             )
         })?;
 
+        // do not do anything if it's not Balances call, early return
+        if !matches!(call, RuntimeCall::Balances(_)) {
+            return Ok((ValidTransaction::default(), (), origin));
+        }
+
         if let Some((_, policy)) = ReversibleTxs::is_reversible(&who) {
             match policy {
                 DelayPolicy::Explicit => {
@@ -75,20 +80,18 @@ impl<T: pallet_reversible_txs::Config + Send + Sync + alloc::fmt::Debug>
                 }
                 DelayPolicy::Intercept => {
                     // Only intercept `Balances` calls for now.
-                    if matches!(call, RuntimeCall::Balances(_)) {
-                        let _ = ReversibleTxs::do_schedule_dispatch(origin.clone(), call.clone())
-                            .map_err(|_| {
+                    let _ = ReversibleTxs::do_schedule_dispatch(origin.clone(), call.clone())
+                        .map_err(|_| {
                             frame_support::pallet_prelude::TransactionValidityError::Invalid(
                                 InvalidTransaction::Custom(1),
                             )
                         })?;
 
-                        return Err(
-                            frame_support::pallet_prelude::TransactionValidityError::Unknown(
-                                frame_support::pallet_prelude::UnknownTransaction::Custom(u8::MAX),
-                            ),
-                        );
-                    }
+                    return Err(
+                        frame_support::pallet_prelude::TransactionValidityError::Unknown(
+                            frame_support::pallet_prelude::UnknownTransaction::Custom(u8::MAX),
+                        ),
+                    );
                 }
             }
         }
@@ -142,6 +145,27 @@ mod tests {
     #[test]
     fn test_reversible_transaction_extension() {
         new_test_ext().execute_with(|| {
+            // Other calls should not be intercepted
+            let call = RuntimeCall::System(frame_system::Call::remark {
+                remark: vec![1, 2, 3],
+            });
+
+            let origin = RuntimeOrigin::signed(alice());
+            let ext = ReversibleTransactionExtension::<Runtime>::new();
+
+            let result = ext.validate(
+                origin,
+                &call,
+                &Default::default(),
+                0,
+                (),
+                &TxBaseImplication::<()>(()),
+                frame_support::pallet_prelude::TransactionSource::External,
+            );
+
+            // we should not fail here
+            assert!(result.is_ok());
+
             // Test the reversible transaction extension
             let ext = ReversibleTransactionExtension::<Runtime>::new();
             let call = RuntimeCall::Balances(pallet_balances::Call::transfer_keep_alive {
