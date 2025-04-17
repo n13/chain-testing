@@ -16,7 +16,8 @@ pub mod pallet {
 	use frame_support::{pallet_prelude::*, traits::BuildGenesisConfig, traits::Time};
 	use frame_support::sp_runtime::SaturatedConversion;
 	use frame_system::pallet_prelude::BlockNumberFor;
-	use num_traits::Float;
+	use sp_arithmetic::{FixedPointNumber, FixedU128};
+	use frame_support::sp_runtime::Saturating;
 	use frame_support::sp_runtime::traits::{One, Zero};
 	use sp_core::U512;
 	use sp_std::prelude::*;
@@ -196,8 +197,8 @@ pub mod pallet {
 			<BlockTimeHistory<T>>::insert(index, block_time);
 
 			// Update index and time
-			index = (index + 1) % max_history;
-			let new_size = if size < max_history { size + 1 } else { max_history };
+			index = (index.saturating_add(1)) % max_history;
+			let new_size = if size < max_history { size.saturating_add(1) } else { max_history };
 
 			<HistoryIndex<T>>::put(index);
 			<HistorySize<T>>::put(new_size);
@@ -228,7 +229,7 @@ pub mod pallet {
 			times.sort();
 
 			let median_time = if times.len() % 2 == 0u32 as usize {
-				(times[times.len() / 2 - 1] + times[times.len() / 2]) / 2
+				(times[times.len() / 2 - 1].saturating_add(times[times.len() / 2])) / 2
 			} else {
 				times[times.len() / 2]
 			};
@@ -258,7 +259,7 @@ pub mod pallet {
 			<TotalDifficulty<T>>::put(new_total_difficulty);
 
 			// Increment number of blocks in period
-			<BlocksInPeriod<T>>::put(blocks + 1);
+			<BlocksInPeriod<T>>::put(blocks.saturating_add(1));
 
 			// Only calculate block time if we're past the genesis block
 			if current_block_number > One::one() {
@@ -272,7 +273,7 @@ pub mod pallet {
 				);
 
 				// Additional protection against super high block times
-				let max_reasonable_time = T::TargetBlockTime::get() * 10;
+				let max_reasonable_time = T::TargetBlockTime::get().saturating_mul(10);
 				// takes smaller value
 				let capped_time = block_time.min(max_reasonable_time);
 
@@ -339,39 +340,75 @@ pub mod pallet {
 			current_difficulty: u64,
 			average_block_time: u64,
 			target_block_time: u64,
-			) -> u64 {
-
+		) -> u64 {
 			log::info!("📊 Calculating new difficulty ---------------------------------------------");
-			log::info!("🟢 Current Difficulty: {}",current_difficulty);
-			log::info!("🕒 Average Block Time: {}ms",average_block_time);
-			log::info!("🎯 Target Block Time: {}ms",target_block_time);
-				
-			// Calculate ratio
-			let ratio = (average_block_time as f32) / (target_block_time as f32);
+			log::info!("🟢 Current Difficulty: {}", current_difficulty);
+			log::info!("🕒 Average Block Time: {}ms", average_block_time);
+			log::info!("🎯 Target Block Time: {}ms", target_block_time);
 
-			// Calculate power factor
-			let change_factor = <f64 as Float>::powf(ratio as f64, 1.0/16.0);
-			//let change_factor = <f64 as Float>::exp(<f64 as Float>::ln(ratio as f64) / 16 as f64);
+			// Calculate ratio using FixedU128
+			let ratio = FixedU128::from_rational(average_block_time as u128, target_block_time as u128);
+			let one = FixedU128::from_rational(1u128, 1u128);
 
-			let dampening = T::DampeningFactor::get();
-			let dampening_factor = dampening as f64;
+			log::info!("Ratio as FixedU128: {}", ratio);
 
-			// Apply additional damping
-			let damped_ratio = 1.0 + (change_factor - 1.0) / dampening_factor;
+			// Approximate x^(1/16) using the formula: 1 + (x-1)/16
+			// This is a good approximation for values close to 1.0
+			let change_factor = if ratio == one {
+				one // No change needed
+			} else if ratio > one {
+				// For ratio > 1 (blocks too slow)
+				let deviation = ratio.saturating_sub(one);
+				let power_effect = deviation.saturating_mul(FixedU128::from_rational(1, 16));
+				one.saturating_add(power_effect)
+			} else {
+				// For ratio < 1 (blocks too fast)
+				let deviation = one.saturating_sub(ratio);
+				let power_effect = deviation.saturating_mul(FixedU128::from_rational(1, 16));
+				one.saturating_sub(power_effect)
+			};
 
-			log::info!("Change factor: {}, damped ratio: {}", change_factor, damped_ratio);
+			log::info!("Change factor approximation: {}", change_factor);
+
+			// Apply dampening - equivalent to: 1.0 + (change_factor - 1.0) / dampening_factor
+			let dampening = FixedU128::from_rational(1u128, T::DampeningFactor::get() as u128);
+
+			let damped_ratio = if change_factor > one {
+				// For change_factor > 1
+				let deviation = change_factor.saturating_sub(one);
+				let damped_effect = deviation.saturating_mul(dampening);
+				one.saturating_add(damped_effect)
+			} else {
+				// For change_factor < 1
+				let deviation = one.saturating_sub(change_factor);
+				let damped_effect = deviation.saturating_mul(dampening);
+				one.saturating_sub(damped_effect)
+			};
 
 			// Calculate adjusted difficulty
-			//let adjusted = (current_difficulty as f64 / change_factor) as u64;
-			let adjusted = (current_difficulty as f64 / damped_ratio) as u64;
-			
+			let adjusted = if damped_ratio == one {
+				current_difficulty
+			} else {
+				// Use checked_div with a fallback to current difficulty if division fails
+				let reciprocal = match one.checked_div(&damped_ratio) {
+					Some(value) => value,
+					None => {
+						log::warn!("Division by zero or overflow in difficulty calculation");
+						return current_difficulty;
+					}
+				};
+
+				// Apply to current difficulty
+				reciprocal.saturating_mul_int(current_difficulty)
+			};
+
 			// Enforce bounds
-			adjusted.min(MAX_DISTANCE - 1).max(T::MinDifficulty::get())
+			adjusted.min(MAX_DISTANCE.saturating_sub(1)).max(T::MinDifficulty::get())
 		}
 	}
 
 	#[pallet::call]
-	impl<T: Config> Pallet<T> {	
+	impl<T: Config> Pallet<T> {
 	}
 
 	impl<T: Config> Pallet<T> {

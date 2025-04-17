@@ -6628,6 +6628,7 @@ dependencies = [
  "primitive-types 0.13.1",
  "qpow-math",
  "scale-info",
+ "sp-arithmetic",
  "sp-core",
  "sp-io",
  "sp-runtime",
