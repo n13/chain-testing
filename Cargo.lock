@@ -6542,6 +6542,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-reversible-txs"
+version = "40.0.1"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "log",
+ "pallet-balances",
+ "pallet-preimage",
+ "pallet-scheduler",
+ "pallet-timestamp",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+]
+
+[[package]]
 name = "pallet-scheduler"
 version = "40.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8310,6 +8329,7 @@ dependencies = [
  "pallet-preimage",
  "pallet-qpow",
  "pallet-referenda",
+ "pallet-reversible-txs",
  "pallet-scheduler",
  "pallet-sudo",
  "pallet-timestamp",
@@ -8329,6 +8349,7 @@ dependencies = [
  "sp-core",
  "sp-genesis-builder",
  "sp-inherents",
+ "sp-io",
  "sp-keyring",
  "sp-offchain",
  "sp-runtime",
