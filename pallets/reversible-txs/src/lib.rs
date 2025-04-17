@@ -16,10 +16,10 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
-// #[cfg(feature = "runtime-benchmarks")]
-// mod benchmarking;
-// pub mod weights; // Assume weights.rs exists or will be created
-// pub use weights::WeightInfo;
+#[cfg(feature = "runtime-benchmarks")]
+mod benchmarking;
+pub mod weights;
+pub use weights::WeightInfo;
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -53,7 +53,7 @@ pub enum DelayPolicy {
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
-    use frame_support::traits::{Bounded, CallerTrait, QueryPreimage, StorePreimage};
+    use frame_support::traits::{Bounded, CallerTrait, Contains, QueryPreimage, StorePreimage};
     use frame_support::{
         traits::schedule::v3::{Named, TaskName},
         PalletId,
@@ -117,8 +117,10 @@ pub mod pallet {
         /// The preimage provider with which we look up call hashes to get the call.
         type Preimages: QueryPreimage<H = Self::Hashing> + StorePreimage;
 
-        // /// A type representing the weights required by the dispatchables of this pallet.
-        // type WeightInfo: WeightInfo;
+        type CallFilter: Contains<<Self as Config>::RuntimeCall>;
+
+        /// A type representing the weights required by the dispatchables of this pallet.
+        type WeightInfo: WeightInfo;
     }
 
     /// Maps accounts to their chosen reversibility delay period (in milliseconds).
@@ -205,6 +207,8 @@ pub mod pallet {
         CallDecodingFailed,
         /// Call is invalid.
         InvalidCall,
+        /// Call is not allowed by the filter.
+        FilteredCall,
         /// Invalid scheduler origin
         InvalidSchedulerOrigin,
     }
@@ -217,7 +221,7 @@ pub mod pallet {
         ///   If `None`, reversibility is disabled for the account.
         ///   If `Some`, must be >= `MinDelayPeriod`.
         #[pallet::call_index(0)]
-        #[pallet::weight(T::DbWeight::get().writes(1))]
+        #[pallet::weight(T::WeightInfo::set_reversibility())]
         pub fn set_reversibility(
             origin: OriginFor<T>,
             delay: Option<BlockNumberFor<T>>,
@@ -239,7 +243,7 @@ pub mod pallet {
         ///
         /// - `tx_id`: The unique identifier of the transaction to cancel.
         #[pallet::call_index(1)]
-        #[pallet::weight(T::DbWeight::get().writes(1))]
+        #[pallet::weight(T::WeightInfo::cancel())]
         pub fn cancel(origin: OriginFor<T>, tx_id: T::Hash) -> DispatchResult {
             let who = ensure_signed(origin)?;
             Self::cancel_dispatch(&who, tx_id)
@@ -249,7 +253,7 @@ pub mod pallet {
         ///
         /// - `tx_id`: The unique id of the transaction to finalize and dispatch.
         #[pallet::call_index(2)]
-        #[pallet::weight(T::DbWeight::get().writes(1))]
+        #[pallet::weight(T::WeightInfo::schedule_dispatch())]
         pub fn execute_dispatch(
             origin: OriginFor<T>,
             tx_id: T::Hash,
@@ -348,6 +352,8 @@ pub mod pallet {
             let who = ensure_signed(origin)?;
             let (delay, _) =
                 Self::reversible_accounts(&who).ok_or(Error::<T>::AccountNotReversible)?;
+
+            ensure!(T::CallFilter::contains(&call), Error::<T>::FilteredCall);
 
             let tx_id = T::Hashing::hash_of(&(who.clone(), call.clone()).encode());
 

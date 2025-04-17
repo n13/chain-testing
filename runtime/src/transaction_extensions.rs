@@ -1,11 +1,17 @@
 //! Custom signed extensions for the runtime.
 use crate::*;
 use codec::{Decode, Encode};
+use configs::CallFilter;
 use core::{marker::PhantomData, u8};
-use frame_support::pallet_prelude::{InvalidTransaction, ValidTransaction};
+use frame_support::{
+    pallet_prelude::{InvalidTransaction, ValidTransaction},
+    traits::Contains,
+};
 use frame_system::ensure_signed;
 use pallet_reversible_txs::DelayPolicy;
+use pallet_reversible_txs::WeightInfo;
 use scale_info::TypeInfo;
+use sp_core::Get;
 use sp_runtime::{traits::TransactionExtension, Weight};
 
 /// Transaction extension for reversible accounts
@@ -33,8 +39,13 @@ impl<T: pallet_reversible_txs::Config + Send + Sync + alloc::fmt::Debug>
 
     const IDENTIFIER: &'static str = "ReversibleTransactionExtension";
 
-    fn weight(&self, _call: &RuntimeCall) -> Weight {
-        Weight::zero()
+    fn weight(&self, call: &RuntimeCall) -> Weight {
+        if CallFilter::contains(call) {
+            return T::WeightInfo::schedule_dispatch();
+        }
+
+        // For reading the reversible accounts
+        T::DbWeight::get().reads(2)
     }
 
     fn prepare(
@@ -64,8 +75,8 @@ impl<T: pallet_reversible_txs::Config + Send + Sync + alloc::fmt::Debug>
             )
         })?;
 
-        // do not do anything if it's not Balances call, early return
-        if !matches!(call, RuntimeCall::Balances(_)) {
+        // early return for call filter
+        if !CallFilter::contains(call) {
             return Ok((ValidTransaction::default(), (), origin));
         }
 

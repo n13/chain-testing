@@ -35,12 +35,6 @@ fn run_to_block(n: u64) {
     }
 }
 
-// Helper to create a bounded vec of task ids
-fn bounded_vec(ids: Vec<H256>) -> BoundedVec<H256, MaxReversibleTxs> {
-    ids.try_into()
-        .unwrap_or_else(|_| panic!("Failed to convert to BoundedVec"))
-}
-
 #[test]
 fn set_reversibility_works() {
     new_test_ext().execute_with(|| {
@@ -230,6 +224,22 @@ fn schedule_dispatch_fails_too_many_pending() {
         assert_err!(
             ReversibleTxs::schedule_dispatch(RuntimeOrigin::signed(user), Box::new(call)),
             Error::<Test>::TooManyPendingTransactions
+        );
+    });
+}
+
+#[test]
+fn schedule_dispatch_fails_call_filter() {
+    new_test_ext().execute_with(|| {
+        let user = 1;
+        let call = RuntimeCall::System(frame_system::Call::remark {
+            remark: vec![1, 2, 3],
+        });
+
+        // Call is not allowed by the filter
+        assert_err!(
+            ReversibleTxs::schedule_dispatch(RuntimeOrigin::signed(user), Box::new(call)),
+            Error::<Test>::FilteredCall
         );
     });
 }

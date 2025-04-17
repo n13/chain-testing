@@ -19,6 +19,7 @@ frame-benchmarking = { optional = true, workspace = true }
 frame-support.workspace = true
 frame-system.workspace = true
 sp-runtime.workspace = true
+pallet-balances = { workspace = true, optional = true }
 
 [dev-dependencies]
 frame-support = { workspace = true, features = ["experimental"], default-features = true }
@@ -39,14 +40,16 @@ std = [
 	"log/std",
 	"scale-info/std",
 	"sp-runtime/std",
+	"pallet-balances?/std",
 ]
 # Enable support for setting the existential deposit to zero.
 insecure_zero_ed = []
 runtime-benchmarks = [
-	"frame-benchmarking/runtime-benchmarks",
+	"frame-benchmarking",
 	"frame-support/runtime-benchmarks",
 	"frame-system/runtime-benchmarks",
 	"sp-runtime/runtime-benchmarks",
+	"pallet-balances",
 ]
 try-runtime = [
 	"frame-support/try-runtime",

@@ -304,6 +304,15 @@ parameter_types! {
     pub const MaxReversibleTxs: u32 = 10;
 }
 
+pub struct CallFilter;
+
+impl frame_support::traits::Contains<RuntimeCall> for CallFilter {
+    fn contains(c: &RuntimeCall) -> bool {
+        // only allow calls from the Balances pallet
+        matches!(c, RuntimeCall::Balances(_))
+    }
+}
+
 impl pallet_reversible_txs::Config for Runtime {
     type RuntimeCall = RuntimeCall;
     type RuntimeEvent = RuntimeEvent;
@@ -315,4 +324,6 @@ impl pallet_reversible_txs::Config for Runtime {
     type MinDelayPeriod = MinDelayPeriod;
     type PalletId = ReversibleTxsPalletIdValue;
     type Preimages = Preimage;
+    type CallFilter = CallFilter;
+    type WeightInfo = pallet_reversible_txs::weights::SubstrateWeight<Runtime>;
 }
