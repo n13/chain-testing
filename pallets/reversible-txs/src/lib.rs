@@ -27,7 +27,6 @@ use frame_support::{
     dispatch::{GetDispatchInfo, PostDispatchInfo},
     pallet_prelude::*,
     traits::schedule::DispatchTime,
-    BoundedVec,
 };
 use frame_system::pallet_prelude::*;
 
@@ -153,13 +152,8 @@ pub mod pallet {
     /// Also enforces the maximum pending transactions limit per account.
     #[pallet::storage]
     #[pallet::getter(fn account_pending_index)]
-    pub type AccountPendingIndex<T: Config> = StorageMap<
-        _,
-        Blake2_128Concat,
-        T::AccountId,
-        BoundedVec<T::Hash, T::MaxPendingPerAccount>,
-        ValueQuery,
-    >;
+    pub type AccountPendingIndex<T: Config> =
+        StorageMap<_, Blake2_128Concat, T::AccountId, u32, ValueQuery>;
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -269,6 +263,30 @@ pub mod pallet {
 
             Self::do_execute_dispatch(&tx_id)
         }
+
+        /// Schedule a transaction for delayed execution.
+        #[pallet::call_index(3)]
+        #[pallet::weight(T::DbWeight::get().writes(1))]
+        pub fn schedule_dispatch(
+            origin: OriginFor<T>,
+            call: Box<<T as Config>::RuntimeCall>,
+        ) -> DispatchResult {
+            Self::do_schedule_dispatch(origin, *call)
+        }
+    }
+
+    #[pallet::hooks]
+    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        fn integrity_test() {
+            assert!(
+                T::MinDelayPeriod::get() > Zero::zero(),
+                "`T::MinDelayPeriod` must be greater than 0"
+            );
+            assert!(
+                T::MinDelayPeriod::get() <= T::DefaultDelay::get(),
+                "`T::MinDelayPeriod` must be less or equal to `T::DefaultDelay`"
+            );
+        }
     }
 
     impl<T: Config> Pallet<T> {
@@ -293,9 +311,9 @@ pub mod pallet {
             let post_info = call.dispatch(frame_system::RawOrigin::Signed(who.clone()).into());
 
             // Remove from account index
-            AccountPendingIndex::<T>::mutate(&who, |pending_vec| {
-                // Remove the specific tx_id. `retain` is efficient.
-                pending_vec.retain(|id| id != tx_id);
+            AccountPendingIndex::<T>::mutate(&who, |current_count| {
+                // Decrement the count of pending transactions for the account.
+                *current_count = current_count.saturating_sub(1);
             });
 
             // Remove from main storage
@@ -323,7 +341,7 @@ pub mod pallet {
 
         /// Schedules a runtime call for delayed execution.
         /// This is intended to be called by the `TransactionExtension`, NOT directly by users.
-        pub fn schedule_dispatch(
+        pub fn do_schedule_dispatch(
             origin: T::RuntimeOrigin,
             call: <T as Config>::RuntimeCall,
         ) -> DispatchResult {
@@ -340,15 +358,14 @@ pub mod pallet {
             );
 
             // Check if the account can accommodate another pending transaction
-            AccountPendingIndex::<T>::try_mutate(
-                &who,
-                |pending_vec| -> Result<(), DispatchError> {
-                    pending_vec
-                        .try_push(tx_id)
-                        .map_err(|_| Error::<T>::TooManyPendingTransactions)?;
-                    Ok(())
-                },
-            )?;
+            AccountPendingIndex::<T>::mutate(&who, |current_count| -> Result<(), DispatchError> {
+                ensure!(
+                    *current_count < T::MaxPendingPerAccount::get(),
+                    Error::<T>::TooManyPendingTransactions
+                );
+                *current_count = current_count.saturating_add(1);
+                Ok(())
+            })?;
 
             let dispatch_time = DispatchTime::At(
                 T::BlockNumberProvider::current_block_number().saturating_add(delay),
@@ -397,10 +414,10 @@ pub mod pallet {
             // Remove from main storage
             PendingDispatches::<T>::remove(&tx_id);
 
-            // Remove from account index
-            AccountPendingIndex::<T>::mutate(&owner, |pending_vec| {
-                // Remove the specific tx_id. `retain` is efficient.
-                pending_vec.retain(|id| id != &tx_id);
+            // Decrement account index
+            AccountPendingIndex::<T>::mutate(&owner, |current_count| {
+                // Decrement the count of pending transactions for the account.
+                *current_count = current_count.saturating_sub(1);
             });
 
             let schedule_id = Self::make_schedule_id(&tx_id)?;

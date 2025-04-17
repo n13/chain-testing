@@ -158,15 +158,12 @@ fn schedule_dispatch_works() {
         // Simulate call from SignedExtension
         assert_ok!(ReversibleTxs::schedule_dispatch(
             RuntimeOrigin::signed(user),
-            call.clone()
+            Box::new(call.clone())
         ));
 
         // Check storage
         assert_eq!(PendingDispatches::<Test>::get(tx_id), Some((user, bounded)));
-        assert_eq!(
-            ReversibleTxs::account_pending_index(user),
-            bounded_vec(vec![tx_id])
-        );
+        assert_eq!(ReversibleTxs::account_pending_index(user), 1);
 
         // Check scheduler
         assert!(Agenda::<Test>::get(expected_block).len() > 0);
@@ -180,7 +177,7 @@ fn schedule_dispatch_fails_not_reversible() {
         let call = transfer_call(3, 50);
 
         assert_err!(
-            ReversibleTxs::schedule_dispatch(RuntimeOrigin::signed(user), call),
+            ReversibleTxs::schedule_dispatch(RuntimeOrigin::signed(user), Box::new(call)),
             Error::<Test>::AccountNotReversible
         );
     });
@@ -197,12 +194,12 @@ fn schedule_already_dispatched_call_fails() {
         // Schedule first
         assert_ok!(ReversibleTxs::schedule_dispatch(
             RuntimeOrigin::signed(user),
-            call.clone()
+            Box::new(call.clone())
         ));
 
         // Try to schedule the same call again
         assert_err!(
-            ReversibleTxs::schedule_dispatch(RuntimeOrigin::signed(user), call),
+            ReversibleTxs::schedule_dispatch(RuntimeOrigin::signed(user), Box::new(call)),
             Error::<Test>::AlreadyScheduled
         );
     });
@@ -219,7 +216,7 @@ fn schedule_dispatch_fails_too_many_pending() {
             let call = transfer_call(2, i as u128 + 1); // Unique call each time
             assert_ok!(ReversibleTxs::schedule_dispatch(
                 RuntimeOrigin::signed(user),
-                call
+                Box::new(call)
             ));
             // Max pending per block is 10, so we increment the block number
             // after every 10 calls
@@ -231,7 +228,7 @@ fn schedule_dispatch_fails_too_many_pending() {
         // Try to schedule one more
         let call = transfer_call(3, 100);
         assert_err!(
-            ReversibleTxs::schedule_dispatch(RuntimeOrigin::signed(user), call),
+            ReversibleTxs::schedule_dispatch(RuntimeOrigin::signed(user), Box::new(call)),
             Error::<Test>::TooManyPendingTransactions
         );
     });
@@ -252,10 +249,10 @@ fn cancel_dispatch_works() {
         // Schedule first
         assert_ok!(ReversibleTxs::schedule_dispatch(
             RuntimeOrigin::signed(user),
-            call.clone()
+            Box::new(call.clone())
         ));
         assert!(ReversibleTxs::pending_dispatches(tx_id).is_some());
-        assert!(!ReversibleTxs::account_pending_index(user).is_empty());
+        assert!(!ReversibleTxs::account_pending_index(user).is_zero());
 
         // Check the expected block agendas count
         assert_eq!(Agenda::<Test>::get(execute_block).len(), 1);
@@ -265,7 +262,7 @@ fn cancel_dispatch_works() {
 
         // Check state cleared
         assert!(ReversibleTxs::pending_dispatches(tx_id).is_none());
-        assert!(ReversibleTxs::account_pending_index(user).is_empty());
+        assert!(ReversibleTxs::account_pending_index(user).is_zero());
 
         assert_eq!(Agenda::<Test>::get(execute_block).len(), 0);
 
@@ -285,7 +282,7 @@ fn cancel_dispatch_fails_not_owner() {
         // Schedule as owner
         assert_ok!(ReversibleTxs::schedule_dispatch(
             RuntimeOrigin::signed(owner),
-            call
+            Box::new(call)
         ));
 
         // Attacker tries to cancel
@@ -326,7 +323,7 @@ fn execute_dispatch_works() {
 
         assert_ok!(ReversibleTxs::schedule_dispatch(
             RuntimeOrigin::signed(user),
-            call.clone()
+            Box::new(call.clone())
         ));
         assert!(ReversibleTxs::pending_dispatches(tx_id).is_some());
 
@@ -368,7 +365,7 @@ fn full_flow_execute_works() {
 
         assert_ok!(ReversibleTxs::schedule_dispatch(
             RuntimeOrigin::signed(user),
-            call.clone()
+            Box::new(call.clone())
         ));
         assert!(ReversibleTxs::pending_dispatches(tx_id).is_some());
         assert!(Agenda::<Test>::get(execute_block).len() > 0);
@@ -392,7 +389,7 @@ fn full_flow_execute_works() {
         assert_eq!(Balances::free_balance(dest), initial_dest_balance + amount);
 
         assert!(ReversibleTxs::pending_dispatches(tx_id).is_none());
-        assert!(ReversibleTxs::account_pending_index(user).is_empty());
+        assert!(ReversibleTxs::account_pending_index(user).is_zero());
         assert_eq!(Agenda::<Test>::get(execute_block).len(), 0); // Task removed after execution
     });
 }
@@ -413,12 +410,12 @@ fn full_flow_cancel_prevents_execution() {
 
         assert_ok!(ReversibleTxs::schedule_dispatch(
             RuntimeOrigin::signed(user),
-            call.clone()
+            Box::new(call.clone())
         ));
 
         assert_ok!(ReversibleTxs::cancel(RuntimeOrigin::signed(user), tx_id));
         assert!(ReversibleTxs::pending_dispatches(tx_id).is_none());
-        assert!(ReversibleTxs::account_pending_index(user).is_empty());
+        assert!(ReversibleTxs::account_pending_index(user).is_zero());
 
         // Run past the execution block
         run_to_block(execute_block + 1);

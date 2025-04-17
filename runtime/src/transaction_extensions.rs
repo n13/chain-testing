@@ -76,12 +76,12 @@ impl<T: pallet_reversible_txs::Config + Send + Sync + alloc::fmt::Debug>
                 DelayPolicy::Intercept => {
                     // Only intercept `Balances` calls for now.
                     if matches!(call, RuntimeCall::Balances(_)) {
-                        let _ = ReversibleTxs::schedule_dispatch(origin.clone(), call.clone())
+                        let _ = ReversibleTxs::do_schedule_dispatch(origin.clone(), call.clone())
                             .map_err(|_| {
-                                frame_support::pallet_prelude::TransactionValidityError::Invalid(
-                                    InvalidTransaction::Custom(1),
-                                )
-                            })?;
+                            frame_support::pallet_prelude::TransactionValidityError::Invalid(
+                                InvalidTransaction::Custom(1),
+                            )
+                        })?;
 
                         return Err(
                             frame_support::pallet_prelude::TransactionValidityError::Unknown(
