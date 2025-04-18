@@ -1,10 +1,10 @@
-//! Benchmarking setup for pallet-reversible-txs
+//! Benchmarking setup for pallet-reversible-transfers
 
 #![cfg(feature = "runtime-benchmarks")]
 
 use super::*;
 
-use crate::Pallet as ReversibleTxs; // Alias the pallet
+use crate::Pallet as ReversibleTransfers; // Alias the pallet
 use frame_benchmarking::{account as benchmark_account, v2::*, BenchmarkError};
 use frame_support::traits::{schedule::v3::Named as SchedulerNamed, Get};
 use frame_system::RawOrigin;
@@ -58,7 +58,7 @@ where
 
 // Helper to get the pallet's account ID
 fn pallet_account<T: Config>() -> T::AccountId {
-    ReversibleTxs::<T>::account_id()
+    ReversibleTransfers::<T>::account_id()
 }
 
 // Type alias for Balance, requires Balances pallet in config
@@ -120,7 +120,7 @@ mod benchmarks {
         assert!(PendingTransfers::<T>::contains_key(&tx_id));
         // Check scheduler state (can be complex, checking count is simpler)
         let execute_at = T::BlockNumberProvider::current_block_number().saturating_add(delay);
-        let task_name = ReversibleTxs::<T>::make_schedule_id(&tx_id, 1)?;
+        let task_name = ReversibleTransfers::<T>::make_schedule_id(&tx_id, 1)?;
         assert_eq!(T::Scheduler::next_dispatch_time(task_name), Ok(execute_at));
 
         Ok(())
@@ -143,7 +143,7 @@ mod benchmarks {
 
         // Call the *internal* scheduling logic here for setup
         let recipient = <T as frame_system::Config>::Lookup::unlookup(recipient);
-        ReversibleTxs::<T>::do_schedule_transfer(origin, recipient, transfer_amount.into())?;
+        ReversibleTransfers::<T>::do_schedule_transfer(origin, recipient, transfer_amount.into())?;
         let tx_id = T::Hashing::hash_of(&(caller.clone(), call).encode());
 
         // Ensure setup worked before benchmarking cancel
@@ -157,7 +157,7 @@ mod benchmarks {
         assert_eq!(AccountPendingIndex::<T>::get(&caller), 0);
         assert!(!PendingTransfers::<T>::contains_key(&tx_id));
         // Check scheduler cancelled (agenda item removed)
-        let task_name = ReversibleTxs::<T>::make_schedule_id(&tx_id, 1)?;
+        let task_name = ReversibleTransfers::<T>::make_schedule_id(&tx_id, 1)?;
         assert!(T::Scheduler::next_dispatch_time(task_name).is_err());
 
         Ok(())
@@ -178,7 +178,7 @@ mod benchmarks {
 
         let owner_origin = RawOrigin::Signed(owner.clone()).into();
         let recipient_lookup = <T as frame_system::Config>::Lookup::unlookup(recipient.clone());
-        ReversibleTxs::<T>::do_schedule_transfer(
+        ReversibleTransfers::<T>::do_schedule_transfer(
             owner_origin,
             recipient_lookup,
             transfer_amount.into(),
@@ -219,7 +219,7 @@ mod benchmarks {
     }
 
     impl_benchmark_test_suite!(
-        ReversibleTxs,
+        ReversibleTransfers,
         crate::mock::new_test_ext(),
         crate::mock::Test
     );

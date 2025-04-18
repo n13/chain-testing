@@ -6654,7 +6654,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-reversible-txs"
+name = "pallet-reversible-transfers"
 version = "40.0.1"
 dependencies = [
  "frame-benchmarking",
@@ -8490,7 +8490,7 @@ dependencies = [
  "pallet-preimage",
  "pallet-qpow",
  "pallet-referenda",
- "pallet-reversible-txs",
+ "pallet-reversible-transfers",
  "pallet-scheduler",
  "pallet-sudo",
  "pallet-timestamp",

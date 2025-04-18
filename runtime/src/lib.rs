@@ -260,5 +260,5 @@ mod runtime {
     pub type ConvictionVoting = pallet_conviction_voting;
 
     #[runtime::pallet_index(14)]
-    pub type ReversibleTxs = pallet_reversible_txs;
+    pub type ReversibleTransfers = pallet_reversible_transfers;
 }

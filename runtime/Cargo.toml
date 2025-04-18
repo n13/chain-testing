@@ -54,7 +54,7 @@ frame-system-benchmarking = { optional = true, workspace = true }
 pallet-mining-rewards = {workspace = true, default-features = false}
 pallet-qpow = { workspace = true, default-features = false}
 pallet-wormhole = { workspace = true, default-features = false}
-pallet-reversible-txs = { workspace = true, default-features = false }
+pallet-reversible-transfers = { workspace = true, default-features = false }
 pallet-vesting = { workspace = true, default-features = false }
 sp-consensus-qpow = { workspace = true, default-features = false}
 log = { workspace = true }
@@ -122,7 +122,7 @@ std = [
 	"scale-info/std",
 	"dilithium-crypto/full_crypto",
 	"poseidon-resonance/std",
-	"pallet-reversible-txs/std",
+	"pallet-reversible-transfers/std",
 ]
 
 
@@ -142,7 +142,7 @@ runtime-benchmarks = [
 	"pallet-vesting/runtime-benchmarks",
 	"pallet-wormhole/runtime-benchmarks",
 	"pallet-mining-rewards/runtime-benchmarks",
-	"pallet-reversible-txs/runtime-benchmarks",
+	"pallet-reversible-transfers/runtime-benchmarks",
 ]
 
 try-runtime = [

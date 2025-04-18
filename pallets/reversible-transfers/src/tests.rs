@@ -44,20 +44,20 @@ fn set_reversibility_works() {
 
         // Check initial state
         assert_eq!(
-            ReversibleTxs::is_reversible(&genesis_user),
+            ReversibleTransfers::is_reversible(&genesis_user),
             Some((10, DelayPolicy::Explicit))
         );
 
         // Set the delay
         let another_user = 3;
         let delay = 5u64;
-        assert_ok!(ReversibleTxs::set_reversibility(
+        assert_ok!(ReversibleTransfers::set_reversibility(
             RuntimeOrigin::signed(another_user),
             Some(delay),
             DelayPolicy::Intercept
         ));
         assert_eq!(
-            ReversibleTxs::is_reversible(&another_user),
+            ReversibleTransfers::is_reversible(&another_user),
             Some((delay, DelayPolicy::Intercept))
         );
         System::assert_last_event(
@@ -71,7 +71,7 @@ fn set_reversibility_works() {
 
         // Calling this again should err
         assert_err!(
-            ReversibleTxs::set_reversibility(
+            ReversibleTransfers::set_reversibility(
                 RuntimeOrigin::signed(another_user),
                 Some(delay),
                 DelayPolicy::Intercept
@@ -81,13 +81,13 @@ fn set_reversibility_works() {
 
         // Use default delay
         let default_user = 5;
-        assert_ok!(ReversibleTxs::set_reversibility(
+        assert_ok!(ReversibleTransfers::set_reversibility(
             RuntimeOrigin::signed(default_user),
             None,
             DelayPolicy::Explicit
         ));
         assert_eq!(
-            ReversibleTxs::is_reversible(&default_user),
+            ReversibleTransfers::is_reversible(&default_user),
             Some((DefaultDelay::get(), DelayPolicy::Explicit))
         );
         System::assert_last_event(
@@ -104,14 +104,14 @@ fn set_reversibility_works() {
 
         let new_user = 4;
         assert_err!(
-            ReversibleTxs::set_reversibility(
+            ReversibleTransfers::set_reversibility(
                 RuntimeOrigin::signed(new_user),
                 Some(short_delay),
                 DelayPolicy::Explicit
             ),
             Error::<Test>::DelayTooShort
         );
-        assert_eq!(ReversibleTxs::is_reversible(&new_user), None);
+        assert_eq!(ReversibleTransfers::is_reversible(&new_user), None);
     });
 }
 
@@ -122,14 +122,14 @@ fn set_reversibility_fails_delay_too_short() {
         let short_delay = MinDelayPeriod::get() - 1;
 
         assert_err!(
-            ReversibleTxs::set_reversibility(
+            ReversibleTransfers::set_reversibility(
                 RuntimeOrigin::signed(user),
                 Some(short_delay),
                 DelayPolicy::Explicit
             ),
             Error::<Test>::DelayTooShort
         );
-        assert_eq!(ReversibleTxs::is_reversible(&user), None);
+        assert_eq!(ReversibleTransfers::is_reversible(&user), None);
     });
 }
 
@@ -142,14 +142,14 @@ fn schedule_transfer_works() {
         let amount = 100;
         let call = transfer_call(dest_user, amount);
         let tx_id = calculate_tx_id(user, &call);
-        let (user_delay, _) = ReversibleTxs::is_reversible(&user).unwrap();
+        let (user_delay, _) = ReversibleTransfers::is_reversible(&user).unwrap();
         let expected_block = System::block_number() + user_delay;
         let bounded = Preimage::bound(call.clone()).unwrap();
 
         assert!(Agenda::<Test>::get(expected_block).len() == 0);
 
         // Simulate call from SignedExtension
-        assert_ok!(ReversibleTxs::schedule_transfer(
+        assert_ok!(ReversibleTransfers::schedule_transfer(
             RuntimeOrigin::signed(user),
             dest_user,
             amount,
@@ -165,7 +165,7 @@ fn schedule_transfer_works() {
                 count: 1,
             }
         );
-        assert_eq!(ReversibleTxs::account_pending_index(user), 1);
+        assert_eq!(ReversibleTransfers::account_pending_index(user), 1);
 
         // Check scheduler
         assert!(Agenda::<Test>::get(expected_block).len() > 0);
@@ -178,7 +178,7 @@ fn schedule_transfer_fails_not_reversible() {
         let user = 2; // Not reversible
 
         assert_err!(
-            ReversibleTxs::schedule_transfer(RuntimeOrigin::signed(user), 3, 50),
+            ReversibleTransfers::schedule_transfer(RuntimeOrigin::signed(user), 3, 50),
             Error::<Test>::AccountNotReversible
         );
     });
@@ -192,36 +192,39 @@ fn schedule_multiple_transfer_works() {
         let amount = 100;
 
         // Schedule first
-        assert_ok!(ReversibleTxs::schedule_transfer(
+        assert_ok!(ReversibleTransfers::schedule_transfer(
             RuntimeOrigin::signed(user),
             dest_user,
             amount
         ));
 
         // Try to schedule the same call again
-        assert_ok!(ReversibleTxs::schedule_transfer(
+        assert_ok!(ReversibleTransfers::schedule_transfer(
             RuntimeOrigin::signed(user),
             dest_user,
             amount
         ));
 
         // Check that the count of pending transactions for the user is 2
-        assert_eq!(ReversibleTxs::account_pending_index(user), 2);
+        assert_eq!(ReversibleTransfers::account_pending_index(user), 2);
         // Check that the pending transactions are stored correctly
         let tx_id = calculate_tx_id(user, &transfer_call(dest_user, amount));
         let pending = PendingTransfers::<Test>::get(tx_id).unwrap();
         assert_eq!(pending.count, 2);
 
         // Check that the pending transaction count decreases to 1
-        assert_ok!(ReversibleTxs::cancel(RuntimeOrigin::signed(user), tx_id));
-        assert_eq!(ReversibleTxs::account_pending_index(user), 1);
+        assert_ok!(ReversibleTransfers::cancel(
+            RuntimeOrigin::signed(user),
+            tx_id
+        ));
+        assert_eq!(ReversibleTransfers::account_pending_index(user), 1);
 
         // Check that the pending transaction count decreases to 0 when executed
         let execute_block = System::block_number() + 10;
         run_to_block(execute_block);
 
-        assert_eq!(ReversibleTxs::account_pending_index(user), 0);
-        assert!(ReversibleTxs::pending_dispatches(tx_id).is_none());
+        assert_eq!(ReversibleTransfers::account_pending_index(user), 0);
+        assert!(ReversibleTransfers::pending_dispatches(tx_id).is_none());
     });
 }
 
@@ -229,11 +232,11 @@ fn schedule_multiple_transfer_works() {
 fn schedule_transfer_fails_too_many_pending() {
     new_test_ext().execute_with(|| {
         let user = 1;
-        let max_pending = MaxReversibleTxs::get();
+        let max_pending = MaxReversibleTransfers::get();
 
         // Fill up pending slots
         for i in 0..max_pending {
-            assert_ok!(ReversibleTxs::schedule_transfer(
+            assert_ok!(ReversibleTransfers::schedule_transfer(
                 RuntimeOrigin::signed(user),
                 2,
                 i as u128 + 1
@@ -247,7 +250,7 @@ fn schedule_transfer_fails_too_many_pending() {
 
         // Try to schedule one more
         assert_err!(
-            ReversibleTxs::schedule_transfer(RuntimeOrigin::signed(user), 3, 100),
+            ReversibleTransfers::schedule_transfer(RuntimeOrigin::signed(user), 3, 100),
             Error::<Test>::TooManyPendingTransactions
         );
     });
@@ -260,29 +263,32 @@ fn cancel_dispatch_works() {
         let user = 1;
         let call = transfer_call(2, 50);
         let tx_id = calculate_tx_id(user, &call);
-        let (user_delay, _) = ReversibleTxs::is_reversible(&user).unwrap();
+        let (user_delay, _) = ReversibleTransfers::is_reversible(&user).unwrap();
         let execute_block = System::block_number() + user_delay;
 
         assert_eq!(Agenda::<Test>::get(execute_block).len(), 0);
 
         // Schedule first
-        assert_ok!(ReversibleTxs::schedule_transfer(
+        assert_ok!(ReversibleTransfers::schedule_transfer(
             RuntimeOrigin::signed(user),
             2,
             50
         ));
-        assert!(ReversibleTxs::pending_dispatches(tx_id).is_some());
-        assert!(!ReversibleTxs::account_pending_index(user).is_zero());
+        assert!(ReversibleTransfers::pending_dispatches(tx_id).is_some());
+        assert!(!ReversibleTransfers::account_pending_index(user).is_zero());
 
         // Check the expected block agendas count
         assert_eq!(Agenda::<Test>::get(execute_block).len(), 1);
 
         // Now cancel
-        assert_ok!(ReversibleTxs::cancel(RuntimeOrigin::signed(user), tx_id));
+        assert_ok!(ReversibleTransfers::cancel(
+            RuntimeOrigin::signed(user),
+            tx_id
+        ));
 
         // Check state cleared
-        assert!(ReversibleTxs::pending_dispatches(tx_id).is_none());
-        assert!(ReversibleTxs::account_pending_index(user).is_zero());
+        assert!(ReversibleTransfers::pending_dispatches(tx_id).is_none());
+        assert!(ReversibleTransfers::account_pending_index(user).is_zero());
 
         assert_eq!(Agenda::<Test>::get(execute_block).len(), 0);
 
@@ -300,7 +306,7 @@ fn cancel_dispatch_fails_not_owner() {
         let tx_id = calculate_tx_id(owner, &call);
 
         // Schedule as owner
-        assert_ok!(ReversibleTxs::schedule_transfer(
+        assert_ok!(ReversibleTransfers::schedule_transfer(
             RuntimeOrigin::signed(owner),
             2,
             50
@@ -308,12 +314,12 @@ fn cancel_dispatch_fails_not_owner() {
 
         // Attacker tries to cancel
         assert_err!(
-            ReversibleTxs::cancel(RuntimeOrigin::signed(attacker), tx_id),
+            ReversibleTransfers::cancel(RuntimeOrigin::signed(attacker), tx_id),
             Error::<Test>::NotOwner
         );
 
         // Check state not affected
-        assert!(ReversibleTxs::pending_dispatches(tx_id).is_some());
+        assert!(ReversibleTransfers::pending_dispatches(tx_id).is_some());
     });
 }
 
@@ -324,7 +330,7 @@ fn cancel_dispatch_fails_not_found() {
         let non_existent_tx_id = H256::random();
 
         assert_err!(
-            ReversibleTxs::cancel(RuntimeOrigin::signed(user), non_existent_tx_id),
+            ReversibleTransfers::cancel(RuntimeOrigin::signed(user), non_existent_tx_id),
             Error::<Test>::PendingTxNotFound
         );
     });
@@ -339,31 +345,31 @@ fn execute_transfer_works() {
         let amount = 50;
         let call = transfer_call(dest, amount);
         let tx_id = calculate_tx_id(user, &call);
-        let (delay, _) = ReversibleTxs::is_reversible(&user).unwrap();
+        let (delay, _) = ReversibleTransfers::is_reversible(&user).unwrap();
         let execute_block = System::block_number() + delay;
 
-        assert_ok!(ReversibleTxs::schedule_transfer(
+        assert_ok!(ReversibleTransfers::schedule_transfer(
             RuntimeOrigin::signed(user),
             dest,
             amount
         ));
-        assert!(ReversibleTxs::pending_dispatches(tx_id).is_some());
+        assert!(ReversibleTransfers::pending_dispatches(tx_id).is_some());
 
         run_to_block(execute_block - 1);
 
         // Execute the dispatch as a normal user. This should fail
         // because the origin should be `Signed(PalletId::into_account())`
         assert_err!(
-            ReversibleTxs::execute_transfer(RuntimeOrigin::signed(user), tx_id),
+            ReversibleTransfers::execute_transfer(RuntimeOrigin::signed(user), tx_id),
             Error::<Test>::InvalidSchedulerOrigin,
         );
 
         // Check state cleared
-        assert!(ReversibleTxs::pending_dispatches(tx_id).is_some());
+        assert!(ReversibleTransfers::pending_dispatches(tx_id).is_some());
 
         // Even root origin should fail
         assert_err!(
-            ReversibleTxs::execute_transfer(RuntimeOrigin::root(), tx_id),
+            ReversibleTransfers::execute_transfer(RuntimeOrigin::root(), tx_id),
             BadOrigin
         );
     });
@@ -381,16 +387,16 @@ fn full_flow_execute_works() {
         let initial_dest_balance = Balances::free_balance(dest);
         let call = transfer_call(dest, amount);
         let tx_id = calculate_tx_id(user, &call);
-        let (delay, _) = ReversibleTxs::is_reversible(&user).unwrap();
+        let (delay, _) = ReversibleTransfers::is_reversible(&user).unwrap();
         let start_block = System::block_number();
         let execute_block = start_block + delay;
 
-        assert_ok!(ReversibleTxs::schedule_transfer(
+        assert_ok!(ReversibleTransfers::schedule_transfer(
             RuntimeOrigin::signed(user),
             dest,
             amount
         ));
-        assert!(ReversibleTxs::pending_dispatches(tx_id).is_some());
+        assert!(ReversibleTransfers::pending_dispatches(tx_id).is_some());
         assert!(Agenda::<Test>::get(execute_block).len() > 0);
         assert_eq!(Balances::free_balance(user), initial_user_balance - 50); // Not executed yet, but on hold
 
@@ -411,8 +417,8 @@ fn full_flow_execute_works() {
         assert_eq!(Balances::free_balance(user), initial_user_balance - amount);
         assert_eq!(Balances::free_balance(dest), initial_dest_balance + amount);
 
-        assert!(ReversibleTxs::pending_dispatches(tx_id).is_none());
-        assert!(ReversibleTxs::account_pending_index(user).is_zero());
+        assert!(ReversibleTransfers::pending_dispatches(tx_id).is_none());
+        assert!(ReversibleTransfers::account_pending_index(user).is_zero());
         assert_eq!(Agenda::<Test>::get(execute_block).len(), 0); // Task removed after execution
     });
 }
@@ -427,11 +433,11 @@ fn full_flow_cancel_prevents_execution() {
         let initial_dest_balance = Balances::free_balance(dest);
         let call = transfer_call(dest, amount);
         let tx_id = calculate_tx_id(user, &call);
-        let (delay, _) = ReversibleTxs::is_reversible(&user).unwrap();
+        let (delay, _) = ReversibleTransfers::is_reversible(&user).unwrap();
         let start_block = System::block_number();
         let execute_block = start_block + delay;
 
-        assert_ok!(ReversibleTxs::schedule_transfer(
+        assert_ok!(ReversibleTransfers::schedule_transfer(
             RuntimeOrigin::signed(user),
             dest,
             amount
@@ -439,15 +445,18 @@ fn full_flow_cancel_prevents_execution() {
         // Amount is on hold
         assert_eq!(
             Balances::balance_on_hold(
-                &RuntimeHoldReason::ReversibleTxs(HoldReason::ScheduledTransfer),
+                &RuntimeHoldReason::ReversibleTransfers(HoldReason::ScheduledTransfer),
                 &user
             ),
             amount
         );
 
-        assert_ok!(ReversibleTxs::cancel(RuntimeOrigin::signed(user), tx_id));
-        assert!(ReversibleTxs::pending_dispatches(tx_id).is_none());
-        assert!(ReversibleTxs::account_pending_index(user).is_zero());
+        assert_ok!(ReversibleTransfers::cancel(
+            RuntimeOrigin::signed(user),
+            tx_id
+        ));
+        assert!(ReversibleTransfers::pending_dispatches(tx_id).is_none());
+        assert!(ReversibleTransfers::account_pending_index(user).is_zero());
 
         // Run past the execution block
         run_to_block(execute_block + 1);
@@ -456,7 +465,7 @@ fn full_flow_cancel_prevents_execution() {
         // Amount is on hold
         assert_eq!(
             Balances::balance_on_hold(
-                &RuntimeHoldReason::ReversibleTxs(HoldReason::ScheduledTransfer),
+                &RuntimeHoldReason::ReversibleTransfers(HoldReason::ScheduledTransfer),
                 &user
             ),
             0
@@ -466,11 +475,9 @@ fn full_flow_cancel_prevents_execution() {
 
         // No events were emitted
         let expected_event_pattern = |e: &RuntimeEvent| match e {
-            RuntimeEvent::ReversibleTxs(Event::TransactionExecuted { tx_id: tid, .. })
-                if *tid == tx_id =>
-            {
-                true
-            }
+            RuntimeEvent::ReversibleTransfers(Event::TransactionExecuted {
+                tx_id: tid, ..
+            }) if *tid == tx_id => true,
             _ => false,
         };
         assert!(
@@ -502,12 +509,12 @@ fn freeze_amount_is_consistent_with_multiple_transfers() {
         let amount2 = 200;
         let amount3 = 300;
 
-        let (delay, _) = ReversibleTxs::is_reversible(&user).unwrap();
+        let (delay, _) = ReversibleTransfers::is_reversible(&user).unwrap();
         let execute_block1 = System::block_number() + delay;
         let execute_block2 = System::block_number() + delay + 2;
         let execute_block3 = System::block_number() + delay + 3;
 
-        assert_ok!(ReversibleTxs::schedule_transfer(
+        assert_ok!(ReversibleTransfers::schedule_transfer(
             RuntimeOrigin::signed(user),
             dest,
             amount1
@@ -515,7 +522,7 @@ fn freeze_amount_is_consistent_with_multiple_transfers() {
 
         System::set_block_number(3);
 
-        assert_ok!(ReversibleTxs::schedule_transfer(
+        assert_ok!(ReversibleTransfers::schedule_transfer(
             RuntimeOrigin::signed(user),
             dest,
             amount2
@@ -523,7 +530,7 @@ fn freeze_amount_is_consistent_with_multiple_transfers() {
 
         System::set_block_number(4);
 
-        assert_ok!(ReversibleTxs::schedule_transfer(
+        assert_ok!(ReversibleTransfers::schedule_transfer(
             RuntimeOrigin::signed(user),
             dest,
             amount3
@@ -532,7 +539,7 @@ fn freeze_amount_is_consistent_with_multiple_transfers() {
         // Check frozen amounts
         assert_eq!(
             Balances::balance_on_hold(
-                &RuntimeHoldReason::ReversibleTxs(HoldReason::ScheduledTransfer),
+                &RuntimeHoldReason::ReversibleTransfers(HoldReason::ScheduledTransfer),
                 &user
             ),
             amount1 + amount2 + amount3
@@ -555,7 +562,7 @@ fn freeze_amount_is_consistent_with_multiple_transfers() {
         // First amount is released
         assert_eq!(
             Balances::balance_on_hold(
-                &RuntimeHoldReason::ReversibleTxs(HoldReason::ScheduledTransfer),
+                &RuntimeHoldReason::ReversibleTransfers(HoldReason::ScheduledTransfer),
                 &user
             ),
             amount2 + amount3
@@ -576,7 +583,7 @@ fn freeze_amount_is_consistent_with_multiple_transfers() {
         // Second amount is released
         assert_eq!(
             Balances::balance_on_hold(
-                &RuntimeHoldReason::ReversibleTxs(HoldReason::ScheduledTransfer),
+                &RuntimeHoldReason::ReversibleTransfers(HoldReason::ScheduledTransfer),
                 &user
             ),
             amount3
@@ -594,7 +601,7 @@ fn freeze_amount_is_consistent_with_multiple_transfers() {
         // Third amount is released
         assert_eq!(
             Balances::balance_on_hold(
-                &RuntimeHoldReason::ReversibleTxs(HoldReason::ScheduledTransfer),
+                &RuntimeHoldReason::ReversibleTransfers(HoldReason::ScheduledTransfer),
                 &user
             ),
             0
@@ -603,7 +610,7 @@ fn freeze_amount_is_consistent_with_multiple_transfers() {
         // Check that the held amounts are released
         assert_eq!(
             Balances::balance_on_hold(
-                &RuntimeHoldReason::ReversibleTxs(HoldReason::ScheduledTransfer),
+                &RuntimeHoldReason::ReversibleTransfers(HoldReason::ScheduledTransfer),
                 &user
             ),
             0

@@ -298,22 +298,22 @@ impl pallet_utility::Config for Runtime {
 }
 
 parameter_types! {
-    pub const ReversibleTxsPalletIdValue: PalletId = PalletId(*b"rtpallet");
+    pub const ReversibleTransfersPalletIdValue: PalletId = PalletId(*b"rtpallet");
     pub const DefaultDelay: BlockNumber = 10;
     pub const MinDelayPeriod: BlockNumber = 2;
-    pub const MaxReversibleTxs: u32 = 10;
+    pub const MaxReversibleTransfers: u32 = 10;
 }
 
-impl pallet_reversible_txs::Config for Runtime {
+impl pallet_reversible_transfers::Config for Runtime {
     type RuntimeEvent = RuntimeEvent;
     type SchedulerOrigin = OriginCaller;
     type Scheduler = Scheduler;
     type BlockNumberProvider = System;
-    type MaxPendingPerAccount = MaxReversibleTxs;
+    type MaxPendingPerAccount = MaxReversibleTransfers;
     type DefaultDelay = DefaultDelay;
     type MinDelayPeriod = MinDelayPeriod;
-    type PalletId = ReversibleTxsPalletIdValue;
+    type PalletId = ReversibleTransfersPalletIdValue;
     type Preimages = Preimage;
-    type WeightInfo = pallet_reversible_txs::weights::SubstrateWeight<Runtime>;
+    type WeightInfo = pallet_reversible_transfers::weights::SubstrateWeight<Runtime>;
     type RuntimeHoldReason = RuntimeHoldReason;
 }

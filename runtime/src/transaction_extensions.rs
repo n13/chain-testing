@@ -6,8 +6,8 @@ use frame_support::pallet_prelude::{InvalidTransaction, ValidTransaction};
 use frame_support::traits::fungible::Inspect;
 use frame_support::traits::tokens::Preservation;
 use frame_system::ensure_signed;
-use pallet_reversible_txs::DelayPolicy;
-use pallet_reversible_txs::WeightInfo;
+use pallet_reversible_transfers::DelayPolicy;
+use pallet_reversible_transfers::WeightInfo;
 use scale_info::TypeInfo;
 use sp_core::Get;
 use sp_runtime::{traits::TransactionExtension, Weight};
@@ -19,16 +19,16 @@ use sp_runtime::{traits::TransactionExtension, Weight};
 /// will either be denied or intercepted and delayed.
 #[derive(Encode, Decode, Clone, Eq, PartialEq, Default, TypeInfo, Debug)]
 #[scale_info(skip_type_params(T))]
-pub struct ReversibleTransactionExtension<T: pallet_reversible_txs::Config>(PhantomData<T>);
+pub struct ReversibleTransactionExtension<T: pallet_reversible_transfers::Config>(PhantomData<T>);
 
-impl<T: pallet_reversible_txs::Config + Send + Sync> ReversibleTransactionExtension<T> {
+impl<T: pallet_reversible_transfers::Config + Send + Sync> ReversibleTransactionExtension<T> {
     /// Creates new `TransactionExtension` to check genesis hash.
     pub fn new() -> Self {
         Self(core::marker::PhantomData)
     }
 }
 
-impl<T: pallet_reversible_txs::Config + Send + Sync + alloc::fmt::Debug>
+impl<T: pallet_reversible_transfers::Config + Send + Sync + alloc::fmt::Debug>
     TransactionExtension<RuntimeCall> for ReversibleTransactionExtension<T>
 {
     type Pre = ();
@@ -44,7 +44,7 @@ impl<T: pallet_reversible_txs::Config + Send + Sync + alloc::fmt::Debug>
                 | RuntimeCall::Balances(pallet_balances::Call::transfer_allow_death { .. })
                 | RuntimeCall::Balances(pallet_balances::Call::transfer_all { .. })
         ) {
-            return <T as pallet_reversible_txs::Config>::WeightInfo::schedule_transfer();
+            return <T as pallet_reversible_transfers::Config>::WeightInfo::schedule_transfer();
         }
         // For reading the reversible accounts
         T::DbWeight::get().reads(1)
@@ -77,7 +77,7 @@ impl<T: pallet_reversible_txs::Config + Send + Sync + alloc::fmt::Debug>
             )
         })?;
 
-        if let Some((_, policy)) = ReversibleTxs::is_reversible(&who) {
+        if let Some((_, policy)) = ReversibleTransfers::is_reversible(&who) {
             match policy {
                 // If explicit, do not allow Transfer calls
                 DelayPolicy::Explicit => {
@@ -127,14 +127,17 @@ impl<T: pallet_reversible_txs::Config + Send + Sync + alloc::fmt::Debug>
 
                     // Schedule the transfer
 
-                    let _ =
-                        ReversibleTxs::do_schedule_transfer(origin.clone(), dest.clone(), *amount)
-                            .map_err(|e| {
-                                log::error!("Failed to schedule transfer: {:?}", e);
-                                frame_support::pallet_prelude::TransactionValidityError::Invalid(
-                                    InvalidTransaction::Custom(1),
-                                )
-                            })?;
+                    let _ = ReversibleTransfers::do_schedule_transfer(
+                        origin.clone(),
+                        dest.clone(),
+                        *amount,
+                    )
+                    .map_err(|e| {
+                        log::error!("Failed to schedule transfer: {:?}", e);
+                        frame_support::pallet_prelude::TransactionValidityError::Invalid(
+                            InvalidTransaction::Custom(1),
+                        )
+                    })?;
 
                     return Err(
                         frame_support::pallet_prelude::TransactionValidityError::Unknown(
@@ -152,7 +155,7 @@ impl<T: pallet_reversible_txs::Config + Send + Sync + alloc::fmt::Debug>
 #[cfg(test)]
 mod tests {
     use frame_support::pallet_prelude::{TransactionValidityError, UnknownTransaction};
-    use pallet_reversible_txs::PendingTransfers;
+    use pallet_reversible_transfers::PendingTransfers;
     use sp_runtime::{traits::TxBaseImplication, AccountId32};
 
     use super::*;
@@ -183,7 +186,7 @@ mod tests {
         .assimilate_storage(&mut t)
         .unwrap();
 
-        pallet_reversible_txs::GenesisConfig::<Runtime> {
+        pallet_reversible_transfers::GenesisConfig::<Runtime> {
             initial_reversible_accounts: vec![(alice(), 10)],
         }
         .assimilate_storage(&mut t)
@@ -251,7 +254,7 @@ mod tests {
             assert_eq!(PendingTransfers::<Runtime>::iter().count(), 0);
 
             // Charlie opts in for intercept
-            ReversibleTxs::set_reversibility(
+            ReversibleTransfers::set_reversibility(
                 RuntimeOrigin::signed(charlie()),
                 None,
                 DelayPolicy::Intercept,

@@ -1,12 +1,12 @@
 [package]
-name = "pallet-reversible-txs"
+name = "pallet-reversible-transfers"
 version = "40.0.1"
 authors.workspace = true
 edition.workspace = true
 license = "Apache-2.0"
 homepage.workspace = true
 repository.workspace = true
-description = "Reversible transactions pallet"
+description = "Reversible transfers pallet"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]

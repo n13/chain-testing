@@ -1,4 +1,4 @@
-use crate as pallet_reversible_txs;
+use crate as pallet_reversible_transfers;
 use frame_support::{
     derive_impl, ord_parameter_types, parameter_types,
     traits::{EitherOfDiverse, EqualPrivilegeOnly},
@@ -34,7 +34,7 @@ mod runtime {
     pub type System = frame_system::Pallet<Test>;
 
     #[runtime::pallet_index(1)]
-    pub type ReversibleTxs = pallet_reversible_txs::Pallet<Test>;
+    pub type ReversibleTransfers = pallet_reversible_transfers::Pallet<Test>;
 
     #[runtime::pallet_index(2)]
     pub type Preimage = pallet_preimage::Pallet<Test>;
@@ -61,27 +61,27 @@ impl pallet_balances::Config for Test {
     type AccountStore = frame_system::Pallet<Test>;
     type WeightInfo = ();
     type RuntimeHoldReason = RuntimeHoldReason;
-    type MaxFreezes = MaxReversibleTxs;
+    type MaxFreezes = MaxReversibleTransfers;
 }
 
 parameter_types! {
-    pub const ReversibleTxsPalletIdValue: PalletId = PalletId(*b"rtpallet");
+    pub const ReversibleTransfersPalletIdValue: PalletId = PalletId(*b"rtpallet");
     pub const BlockHashCount: u32 = 250;
     pub const DefaultDelay: u64 = 10;
     pub const MinDelayPeriod: u64 = 2;
-    pub const MaxReversibleTxs: u32 = 100;
+    pub const MaxReversibleTransfers: u32 = 100;
 }
 
-impl pallet_reversible_txs::Config for Test {
+impl pallet_reversible_transfers::Config for Test {
     type RuntimeEvent = RuntimeEvent;
     type SchedulerOrigin = OriginCaller;
     type RuntimeHoldReason = RuntimeHoldReason;
     type Scheduler = Scheduler;
     type BlockNumberProvider = System;
-    type MaxPendingPerAccount = MaxReversibleTxs;
+    type MaxPendingPerAccount = MaxReversibleTransfers;
     type DefaultDelay = DefaultDelay;
     type MinDelayPeriod = MinDelayPeriod;
-    type PalletId = ReversibleTxsPalletIdValue;
+    type PalletId = ReversibleTransfersPalletIdValue;
     type Preimages = Preimage;
     type WeightInfo = ();
 }
@@ -127,7 +127,7 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
     .assimilate_storage(&mut t)
     .unwrap();
 
-    pallet_reversible_txs::GenesisConfig::<Test> {
+    pallet_reversible_transfers::GenesisConfig::<Test> {
         initial_reversible_accounts: vec![(1, 10)],
     }
     .assimilate_storage(&mut t)
