@@ -20,14 +20,14 @@ const SEED: u32 = 0;
 fn make_transfer_call<T: Config + pallet_balances::Config>(
     dest: T::AccountId,
     value: u128,
-) -> Result<<T as Config>::RuntimeCall, &'static str>
+) -> Result<T::RuntimeCall, &'static str>
 where
-    <T as Config>::RuntimeCall: From<pallet_balances::Call<T>>,
+    T::RuntimeCall: From<pallet_balances::Call<T>>,
     BalanceOf<T>: From<u128>,
 {
     let dest = <T as frame_system::Config>::Lookup::unlookup(dest);
 
-    let call: <T as Config>::RuntimeCall = pallet_balances::Call::<T>::transfer_keep_alive {
+    let call: T::RuntimeCall = pallet_balances::Call::<T>::transfer_keep_alive {
         dest,
         value: value.into(),
     }
@@ -69,7 +69,7 @@ type BalanceOf<T> = <T as pallet_balances::Config>::Balance;
     T: Send + Sync,
     T: Config + pallet_balances::Config,
     <T as pallet_balances::Config>::Balance: From<u128> + Into<u128>,
-    <T as Config>::RuntimeCall: From<pallet_balances::Call<T>> + From<frame_system::Call<T>>,
+    T::RuntimeCall: From<pallet_balances::Call<T>> + From<frame_system::Call<T>>,
 )]
 mod benchmarks {
     use super::*;
@@ -93,7 +93,7 @@ mod benchmarks {
     }
 
     #[benchmark]
-    fn schedule_dispatch() -> Result<(), BenchmarkError> {
+    fn schedule_transfer() -> Result<(), BenchmarkError> {
         let caller: T::AccountId = whitelisted_caller();
         // Ensure caller has funds if the call requires it (e.g., transfer)
         fund_account::<T>(&caller, BalanceOf::<T>::from(1000u128));
@@ -104,19 +104,23 @@ mod benchmarks {
         let delay = T::DefaultDelay::get();
         setup_reversible_account::<T>(caller.clone(), delay, DelayPolicy::Explicit);
 
-        let call = make_transfer_call::<T>(recipient, transfer_amount)?;
-        let boxed_call = Box::new(call.clone()); // Create Box for extrinsic param
+        let call = make_transfer_call::<T>(recipient.clone(), transfer_amount)?;
         let tx_id = T::Hashing::hash_of(&(caller.clone(), call).encode());
 
+        let recipient = <T as frame_system::Config>::Lookup::unlookup(recipient);
         // Schedule the dispatch
         #[extrinsic_call]
-        _(RawOrigin::Signed(caller.clone()), boxed_call);
+        _(
+            RawOrigin::Signed(caller.clone()),
+            recipient,
+            transfer_amount.into(),
+        );
 
         assert_eq!(AccountPendingIndex::<T>::get(&caller), 1);
-        assert!(PendingDispatches::<T>::contains_key(&tx_id));
+        assert!(PendingTransfers::<T>::contains_key(&tx_id));
         // Check scheduler state (can be complex, checking count is simpler)
         let execute_at = T::BlockNumberProvider::current_block_number().saturating_add(delay);
-        let task_name = ReversibleTxs::<T>::make_schedule_id(&tx_id)?;
+        let task_name = ReversibleTxs::<T>::make_schedule_id(&tx_id, 1)?;
         assert_eq!(T::Scheduler::next_dispatch_time(task_name), Ok(execute_at));
 
         Ok(())
@@ -132,35 +136,35 @@ mod benchmarks {
         // Setup caller as reversible and schedule a task in setup
         let delay = T::DefaultDelay::get();
         setup_reversible_account::<T>(caller.clone(), delay, DelayPolicy::Explicit);
-        let call = make_transfer_call::<T>(recipient, transfer_amount)?;
-        let tx_id;
+        let call = make_transfer_call::<T>(recipient.clone(), transfer_amount)?;
 
         // Use internal function directly in setup - requires RuntimeOrigin from Config
         let origin = RawOrigin::Signed(caller.clone()).into(); // T::RuntimeOrigin
 
         // Call the *internal* scheduling logic here for setup
-        ReversibleTxs::<T>::do_schedule_dispatch(origin, call.clone())?;
-        tx_id = T::Hashing::hash_of(&(caller.clone(), call).encode());
+        let recipient = <T as frame_system::Config>::Lookup::unlookup(recipient);
+        ReversibleTxs::<T>::do_schedule_transfer(origin, recipient, transfer_amount.into())?;
+        let tx_id = T::Hashing::hash_of(&(caller.clone(), call).encode());
 
         // Ensure setup worked before benchmarking cancel
         assert_eq!(AccountPendingIndex::<T>::get(&caller), 1);
-        assert!(PendingDispatches::<T>::contains_key(&tx_id));
+        assert!(PendingTransfers::<T>::contains_key(&tx_id));
 
         // Benchmark the cancel extrinsic
         #[extrinsic_call]
         _(RawOrigin::Signed(caller.clone()), tx_id);
 
         assert_eq!(AccountPendingIndex::<T>::get(&caller), 0);
-        assert!(!PendingDispatches::<T>::contains_key(&tx_id));
+        assert!(!PendingTransfers::<T>::contains_key(&tx_id));
         // Check scheduler cancelled (agenda item removed)
-        let task_name = ReversibleTxs::<T>::make_schedule_id(&tx_id)?;
+        let task_name = ReversibleTxs::<T>::make_schedule_id(&tx_id, 1)?;
         assert!(T::Scheduler::next_dispatch_time(task_name).is_err());
 
         Ok(())
     }
 
     #[benchmark]
-    fn execute_dispatch() -> Result<(), BenchmarkError> {
+    fn execute_transfer() -> Result<(), BenchmarkError> {
         let owner: T::AccountId = whitelisted_caller();
         fund_account::<T>(&owner, BalanceOf::<T>::from(100u128)); // Fund owner
         let recipient: T::AccountId = benchmark_account("recipient", 0, SEED);
@@ -173,12 +177,17 @@ mod benchmarks {
         let call = make_transfer_call::<T>(recipient.clone(), transfer_amount)?;
 
         let owner_origin = RawOrigin::Signed(owner.clone()).into();
-        ReversibleTxs::<T>::do_schedule_dispatch(owner_origin, call.clone())?;
+        let recipient_lookup = <T as frame_system::Config>::Lookup::unlookup(recipient.clone());
+        ReversibleTxs::<T>::do_schedule_transfer(
+            owner_origin,
+            recipient_lookup,
+            transfer_amount.into(),
+        )?;
         let tx_id = T::Hashing::hash_of(&(owner.clone(), call).encode());
 
         // Ensure setup worked
         assert_eq!(AccountPendingIndex::<T>::get(&owner), 1);
-        assert!(PendingDispatches::<T>::contains_key(&tx_id));
+        assert!(PendingTransfers::<T>::contains_key(&tx_id));
 
         // Determine the origin for the execute_dispatch call
         // This MUST match what execute_dispatch expects (e.g., pallet account or Root)
@@ -195,7 +204,7 @@ mod benchmarks {
 
         // Check state cleaned up
         assert_eq!(AccountPendingIndex::<T>::get(&owner), 0);
-        assert!(!PendingDispatches::<T>::contains_key(&tx_id));
+        assert!(!PendingTransfers::<T>::contains_key(&tx_id));
         // Check side effect of inner call (balance transfer)
         let initial_balance = <pallet_balances::Pallet<T> as frame_support::traits::Currency<
             T::AccountId,

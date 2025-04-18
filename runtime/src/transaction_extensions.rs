@@ -1,12 +1,10 @@
 //! Custom signed extensions for the runtime.
 use crate::*;
 use codec::{Decode, Encode};
-use configs::CallFilter;
 use core::{marker::PhantomData, u8};
-use frame_support::{
-    pallet_prelude::{InvalidTransaction, ValidTransaction},
-    traits::Contains,
-};
+use frame_support::pallet_prelude::{InvalidTransaction, ValidTransaction};
+use frame_support::traits::fungible::Inspect;
+use frame_support::traits::tokens::Preservation;
 use frame_system::ensure_signed;
 use pallet_reversible_txs::DelayPolicy;
 use pallet_reversible_txs::WeightInfo;
@@ -40,12 +38,16 @@ impl<T: pallet_reversible_txs::Config + Send + Sync + alloc::fmt::Debug>
     const IDENTIFIER: &'static str = "ReversibleTransactionExtension";
 
     fn weight(&self, call: &RuntimeCall) -> Weight {
-        if CallFilter::contains(call) {
-            return T::WeightInfo::schedule_dispatch();
+        if matches!(
+            call,
+            RuntimeCall::Balances(pallet_balances::Call::transfer_keep_alive { .. })
+                | RuntimeCall::Balances(pallet_balances::Call::transfer_allow_death { .. })
+                | RuntimeCall::Balances(pallet_balances::Call::transfer_all { .. })
+        ) {
+            return <T as pallet_reversible_txs::Config>::WeightInfo::schedule_transfer();
         }
-
         // For reading the reversible accounts
-        T::DbWeight::get().reads(2)
+        T::DbWeight::get().reads(1)
     }
 
     fn prepare(
@@ -75,28 +77,64 @@ impl<T: pallet_reversible_txs::Config + Send + Sync + alloc::fmt::Debug>
             )
         })?;
 
-        // early return for call filter
-        if !CallFilter::contains(call) {
-            return Ok((ValidTransaction::default(), (), origin));
-        }
-
         if let Some((_, policy)) = ReversibleTxs::is_reversible(&who) {
             match policy {
+                // If explicit, do not allow Transfer calls
                 DelayPolicy::Explicit => {
-                    return Err(
-                        frame_support::pallet_prelude::TransactionValidityError::Invalid(
-                            InvalidTransaction::Custom(0),
-                        ),
-                    );
+                    if matches!(
+                        call,
+                        RuntimeCall::Balances(pallet_balances::Call::transfer_keep_alive { .. })
+                            | RuntimeCall::Balances(
+                                pallet_balances::Call::transfer_allow_death { .. }
+                            )
+                            | RuntimeCall::Balances(pallet_balances::Call::transfer_all { .. })
+                    ) {
+                        return Err(
+                            frame_support::pallet_prelude::TransactionValidityError::Invalid(
+                                InvalidTransaction::Custom(0),
+                            ),
+                        );
+                    }
                 }
                 DelayPolicy::Intercept => {
-                    // Only intercept `Balances` calls for now.
-                    let _ = ReversibleTxs::do_schedule_dispatch(origin.clone(), call.clone())
-                        .map_err(|_| {
-                            frame_support::pallet_prelude::TransactionValidityError::Invalid(
-                                InvalidTransaction::Custom(1),
-                            )
-                        })?;
+                    // Only intercept token transfers
+                    let (dest, amount) = match call {
+                        RuntimeCall::Balances(pallet_balances::Call::transfer_keep_alive {
+                            dest,
+                            value,
+                        }) => (dest, value),
+                        RuntimeCall::Balances(pallet_balances::Call::transfer_allow_death {
+                            dest,
+                            value,
+                        }) => (dest, value),
+                        RuntimeCall::Balances(pallet_balances::Call::transfer_all {
+                            dest,
+                            keep_alive,
+                        }) => (
+                            dest,
+                            &Balances::reducible_balance(
+                                &who,
+                                if *keep_alive {
+                                    Preservation::Preserve
+                                } else {
+                                    Preservation::Expendable
+                                },
+                                frame_support::traits::tokens::Fortitude::Polite,
+                            ),
+                        ),
+                        _ => return Ok((ValidTransaction::default(), (), origin)),
+                    };
+
+                    // Schedule the transfer
+
+                    let _ =
+                        ReversibleTxs::do_schedule_transfer(origin.clone(), dest.clone(), *amount)
+                            .map_err(|e| {
+                                log::error!("Failed to schedule transfer: {:?}", e);
+                                frame_support::pallet_prelude::TransactionValidityError::Invalid(
+                                    InvalidTransaction::Custom(1),
+                                )
+                            })?;
 
                     return Err(
                         frame_support::pallet_prelude::TransactionValidityError::Unknown(
@@ -114,7 +152,7 @@ impl<T: pallet_reversible_txs::Config + Send + Sync + alloc::fmt::Debug>
 #[cfg(test)]
 mod tests {
     use frame_support::pallet_prelude::{TransactionValidityError, UnknownTransaction};
-    use pallet_reversible_txs::PendingDispatches;
+    use pallet_reversible_txs::PendingTransfers;
     use sp_runtime::{traits::TxBaseImplication, AccountId32};
 
     use super::*;
@@ -139,6 +177,7 @@ mod tests {
             balances: vec![
                 (alice(), EXISTENTIAL_DEPOSIT * 10000),
                 (bob(), EXISTENTIAL_DEPOSIT * 2),
+                (charlie(), EXISTENTIAL_DEPOSIT * 100),
             ],
         }
         .assimilate_storage(&mut t)
@@ -209,7 +248,7 @@ mod tests {
                 TransactionValidityError::Invalid(InvalidTransaction::Custom(0))
             );
             // Pending transactions should be empty
-            assert_eq!(PendingDispatches::<Runtime>::iter().count(), 0);
+            assert_eq!(PendingTransfers::<Runtime>::iter().count(), 0);
 
             // Charlie opts in for intercept
             ReversibleTxs::set_reversibility(
@@ -246,14 +285,14 @@ mod tests {
                 frame_support::pallet_prelude::TransactionSource::External,
             );
             // we should fail here with `UnknownTransaction::Custom(u8::MAX)` since default policy is
-            // `DelayPolicy::Intercept`
+            // `DelayPolicy::Explicit`
             assert_eq!(
                 result.unwrap_err(),
                 TransactionValidityError::Unknown(UnknownTransaction::Custom(u8::MAX))
             );
 
             // Pending transactions should contain the transaction
-            assert_eq!(PendingDispatches::<Runtime>::iter().count(), 1);
+            assert_eq!(PendingTransfers::<Runtime>::iter().count(), 1);
 
             // Other calls should not be intercepted
             let call = RuntimeCall::System(frame_system::Call::remark {

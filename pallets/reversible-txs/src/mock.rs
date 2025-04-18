@@ -1,7 +1,7 @@
 use crate as pallet_reversible_txs;
 use frame_support::{
     derive_impl, ord_parameter_types, parameter_types,
-    traits::{Contains, EitherOfDiverse, EqualPrivilegeOnly},
+    traits::{EitherOfDiverse, EqualPrivilegeOnly},
     PalletId,
 };
 use frame_system::{limits::BlockWeights, EnsureRoot, EnsureSignedBy};
@@ -60,6 +60,8 @@ impl pallet_balances::Config for Test {
     type ExistentialDeposit = ConstU128<1>;
     type AccountStore = frame_system::Pallet<Test>;
     type WeightInfo = ();
+    type RuntimeHoldReason = RuntimeHoldReason;
+    type MaxFreezes = MaxReversibleTxs;
 }
 
 parameter_types! {
@@ -70,19 +72,10 @@ parameter_types! {
     pub const MaxReversibleTxs: u32 = 100;
 }
 
-pub struct MockCallFilter;
-
-impl Contains<RuntimeCall> for MockCallFilter {
-    fn contains(c: &RuntimeCall) -> bool {
-        // only allow calls from the Balances pallet
-        matches!(c, RuntimeCall::Balances(_))
-    }
-}
-
 impl pallet_reversible_txs::Config for Test {
     type RuntimeEvent = RuntimeEvent;
-    type RuntimeCall = RuntimeCall;
     type SchedulerOrigin = OriginCaller;
+    type RuntimeHoldReason = RuntimeHoldReason;
     type Scheduler = Scheduler;
     type BlockNumberProvider = System;
     type MaxPendingPerAccount = MaxReversibleTxs;
@@ -90,7 +83,6 @@ impl pallet_reversible_txs::Config for Test {
     type MinDelayPeriod = MinDelayPeriod;
     type PalletId = ReversibleTxsPalletIdValue;
     type Preimages = Preimage;
-    type CallFilter = MockCallFilter;
     type WeightInfo = ();
 }
 

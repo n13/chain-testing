@@ -21,14 +21,10 @@ mod benchmarking;
 pub mod weights;
 pub use weights::WeightInfo;
 
-use alloc::boxed::Box;
 use alloc::vec::Vec;
-use frame_support::{
-    dispatch::{GetDispatchInfo, PostDispatchInfo},
-    pallet_prelude::*,
-    traits::schedule::DispatchTime,
-};
+use frame_support::{pallet_prelude::*, traits::schedule::DispatchTime};
 use frame_system::pallet_prelude::*;
+use sp_runtime::traits::StaticLookup;
 
 /// How to delay transactions
 /// - `Explicit`: Only delay transactions explicitly using `schedule_dispatch`.
@@ -50,10 +46,30 @@ pub enum DelayPolicy {
     Intercept,
 }
 
+/// Pending transfer details
+#[derive(Encode, Decode, MaxEncodedLen, Clone, Default, TypeInfo, Debug, PartialEq, Eq)]
+pub struct PendingTransfer<AccountId, Balance, Call> {
+    /// The account that scheduled the transaction
+    pub who: AccountId,
+    /// The call
+    pub call: Call,
+    /// Amount frozen for the transaction
+    pub amount: Balance,
+    /// Count of this pending transaction for the account. Used to track number of identical
+    /// transactions scheduled by the same account.
+    pub count: u32,
+}
+
+/// Balance type
+type BalanceOf<T> = <T as pallet_balances::Config>::Balance;
+
 #[frame_support::pallet]
 pub mod pallet {
     use super::*;
-    use frame_support::traits::{Bounded, CallerTrait, Contains, QueryPreimage, StorePreimage};
+    use frame_support::dispatch::PostDispatchInfo;
+    use frame_support::traits::fungible::MutateHold;
+    use frame_support::traits::tokens::Precision;
+    use frame_support::traits::{Bounded, CallerTrait, QueryPreimage, StorePreimage};
     use frame_support::{
         traits::schedule::v3::{Named, TaskName},
         PalletId,
@@ -67,26 +83,20 @@ pub mod pallet {
     pub struct Pallet<T>(_);
 
     #[pallet::config]
-    pub trait Config: frame_system::Config {
+    pub trait Config:
+        frame_system::Config<
+            RuntimeCall: From<pallet_balances::Call<Self>>
+                             + From<Call<Self>>
+                             + Dispatchable<PostInfo = PostDispatchInfo>,
+        > + pallet_balances::Config<RuntimeHoldReason = <Self as Config>::RuntimeHoldReason>
+    {
         /// The overarching runtime event type.
         type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
-
-        /// The overarching runtime call type. Must be dispatchable and encodable.
-        type RuntimeCall: Parameter
-            + Dispatchable<RuntimeOrigin = Self::RuntimeOrigin, PostInfo = PostDispatchInfo>
-            + GetDispatchInfo
-            + From<Call<Self>>
-            + Encode
-            + Decode
-            + Clone
-            + Eq
-            + PartialEq
-            + IsType<<Self as frame_system::Config>::RuntimeCall>;
 
         /// Scheduler for the runtime. We use the Named scheduler for cancellability.
         type Scheduler: Named<
             BlockNumberFor<Self>,
-            <Self as Config>::RuntimeCall,
+            Self::RuntimeCall,
             Self::SchedulerOrigin,
             Hasher = Self::Hashing,
         >;
@@ -117,10 +127,11 @@ pub mod pallet {
         /// The preimage provider with which we look up call hashes to get the call.
         type Preimages: QueryPreimage<H = Self::Hashing> + StorePreimage;
 
-        type CallFilter: Contains<<Self as Config>::RuntimeCall>;
-
         /// A type representing the weights required by the dispatchables of this pallet.
         type WeightInfo: WeightInfo;
+
+        /// Hold reason for the reversible transactions.
+        type RuntimeHoldReason: From<HoldReason>;
     }
 
     /// Maps accounts to their chosen reversibility delay period (in milliseconds).
@@ -139,14 +150,11 @@ pub mod pallet {
     /// Keyed by the unique transaction ID.
     #[pallet::storage]
     #[pallet::getter(fn pending_dispatches)]
-    pub type PendingDispatches<T: Config> = StorageMap<
+    pub type PendingTransfers<T: Config> = StorageMap<
         _,
         Blake2_128Concat,
         T::Hash,
-        (
-            T::AccountId,
-            Bounded<<T as Config>::RuntimeCall, T::Hashing>,
-        ),
+        PendingTransfer<T::AccountId, BalanceOf<T>, Bounded<T::RuntimeCall, T::Hashing>>,
         OptionQuery,
     >;
 
@@ -187,6 +195,8 @@ pub mod pallet {
 
     #[pallet::error]
     pub enum Error<T> {
+        /// The account attempting to enable reversibility is already marked as reversible.
+        AccountAlreadyReversible,
         /// The account attempting the action is not marked as reversible.
         AccountNotReversible,
         /// The specified pending transaction ID was not found.
@@ -201,27 +211,26 @@ pub mod pallet {
         SchedulingFailed,
         /// Failed to cancel the scheduled task with the scheduler pallet.
         CancellationFailed,
-        /// The provided transaction ID is already associated with a pending transaction.
-        AlreadyScheduled, // Should be rare with good TxIdProvider but possible
         /// Failed to decode the OpaqueCall back into a RuntimeCall.
         CallDecodingFailed,
         /// Call is invalid.
         InvalidCall,
-        /// Call is not allowed by the filter.
-        FilteredCall,
         /// Invalid scheduler origin
         InvalidSchedulerOrigin,
     }
 
     #[pallet::call]
-    impl<T: Config> Pallet<T> {
+    impl<T: Config> Pallet<T>
+    where
+        T: pallet_balances::Config<RuntimeHoldReason = <T as Config>::RuntimeHoldReason>,
+    {
         /// Enable reversibility for the calling account with a specified delay, or disable it.
         ///
         /// - `delay`: The time (in milliseconds) after submission before the transaction executes.
         ///   If `None`, reversibility is disabled for the account.
         ///   If `Some`, must be >= `MinDelayPeriod`.
         #[pallet::call_index(0)]
-        #[pallet::weight(T::WeightInfo::set_reversibility())]
+        #[pallet::weight(<T as Config>::WeightInfo::set_reversibility())]
         pub fn set_reversibility(
             origin: OriginFor<T>,
             delay: Option<BlockNumberFor<T>>,
@@ -229,6 +238,10 @@ pub mod pallet {
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
 
+            ensure!(
+                !ReversibleAccounts::<T>::contains_key(&who),
+                Error::<T>::AccountAlreadyReversible
+            );
             let delay = delay.unwrap_or(T::DefaultDelay::get());
 
             ensure!(delay >= T::MinDelayPeriod::get(), Error::<T>::DelayTooShort);
@@ -243,18 +256,18 @@ pub mod pallet {
         ///
         /// - `tx_id`: The unique identifier of the transaction to cancel.
         #[pallet::call_index(1)]
-        #[pallet::weight(T::WeightInfo::cancel())]
+        #[pallet::weight(<T as Config>::WeightInfo::cancel())]
         pub fn cancel(origin: OriginFor<T>, tx_id: T::Hash) -> DispatchResult {
             let who = ensure_signed(origin)?;
-            Self::cancel_dispatch(&who, tx_id)
+            Self::cancel_transfer(&who, tx_id)
         }
 
         /// Called by the Scheduler to finalize the scheduled task/call
         ///
         /// - `tx_id`: The unique id of the transaction to finalize and dispatch.
         #[pallet::call_index(2)]
-        #[pallet::weight(T::WeightInfo::schedule_dispatch())]
-        pub fn execute_dispatch(
+        #[pallet::weight(<T as Config>::WeightInfo::execute_transfer())]
+        pub fn execute_transfer(
             origin: OriginFor<T>,
             tx_id: T::Hash,
         ) -> DispatchResultWithPostInfo {
@@ -265,17 +278,18 @@ pub mod pallet {
                 Error::<T>::InvalidSchedulerOrigin
             );
 
-            Self::do_execute_dispatch(&tx_id)
+            Self::do_execute_transfer(&tx_id)
         }
 
         /// Schedule a transaction for delayed execution.
         #[pallet::call_index(3)]
-        #[pallet::weight(T::DbWeight::get().writes(1))]
-        pub fn schedule_dispatch(
+        #[pallet::weight(<T as Config>::WeightInfo::schedule_transfer())]
+        pub fn schedule_transfer(
             origin: OriginFor<T>,
-            call: Box<<T as Config>::RuntimeCall>,
+            dest: <<T as frame_system::Config>::Lookup as StaticLookup>::Source,
+            amount: BalanceOf<T>,
         ) -> DispatchResult {
-            Self::do_schedule_dispatch(origin, *call)
+            Self::do_schedule_transfer(origin, dest, amount)
         }
     }
 
@@ -293,7 +307,18 @@ pub mod pallet {
         }
     }
 
-    impl<T: Config> Pallet<T> {
+    /// A reason for holding funds.
+    #[pallet::composite_enum]
+    pub enum HoldReason {
+        /// Scheduled transfer amount.
+        #[codec(index = 0)]
+        ScheduledTransfer,
+    }
+
+    impl<T: Config> Pallet<T>
+    where
+        T: pallet_balances::Config<RuntimeHoldReason = <T as Config>::RuntimeHoldReason>,
+    {
         /// Check if an account has reversibility enabled and return its delay.
         pub fn is_reversible(who: &T::AccountId) -> Option<(BlockNumberFor<T>, DelayPolicy)> {
             ReversibleAccounts::<T>::get(who)
@@ -304,24 +329,46 @@ pub mod pallet {
             T::PalletId::get().into_account_truncating()
         }
 
-        fn do_execute_dispatch(tx_id: &T::Hash) -> DispatchResultWithPostInfo {
-            let (who, call) =
-                PendingDispatches::<T>::take(tx_id).ok_or(Error::<T>::PendingTxNotFound)?;
+        fn do_execute_transfer(tx_id: &T::Hash) -> DispatchResultWithPostInfo {
+            let pending = PendingTransfers::<T>::get(tx_id).ok_or(Error::<T>::PendingTxNotFound)?;
 
             // get from preimages
-            let (call, _) = T::Preimages::realize::<<T as Config>::RuntimeCall>(&call)
+            let (call, _) = T::Preimages::realize::<T::RuntimeCall>(&pending.call)
                 .map_err(|_| Error::<T>::CallDecodingFailed)?;
 
-            let post_info = call.dispatch(frame_system::RawOrigin::Signed(who.clone()).into());
+            // Release the funds
+            pallet_balances::Pallet::<T>::release(
+                &HoldReason::ScheduledTransfer.into(),
+                &pending.who,
+                pending.amount,
+                Precision::Exact,
+            )?;
+
+            let post_info = call
+                .dispatch(frame_support::dispatch::RawOrigin::Signed(pending.who.clone()).into());
 
             // Remove from account index
-            AccountPendingIndex::<T>::mutate(&who, |current_count| {
+            AccountPendingIndex::<T>::mutate(&pending.who, |current_count| {
                 // Decrement the count of pending transactions for the account.
                 *current_count = current_count.saturating_sub(1);
             });
 
             // Remove from main storage
-            PendingDispatches::<T>::remove(tx_id);
+            if pending.count > 1 {
+                // If there are more than one identical transactions, decrement the count
+                PendingTransfers::<T>::insert(
+                    tx_id,
+                    PendingTransfer {
+                        who: pending.who.clone(),
+                        call: pending.call,
+                        amount: pending.amount,
+                        count: pending.count.saturating_sub(1),
+                    },
+                );
+            } else {
+                // Otherwise, remove the transaction from storage
+                PendingTransfers::<T>::remove(tx_id);
+            }
 
             // Emit event
             Self::deposit_event(Event::TransactionExecuted {
@@ -333,8 +380,8 @@ pub mod pallet {
         }
 
         /// Simply converts hash output to a `TaskName`
-        pub fn make_schedule_id(tx_id: &T::Hash) -> Result<TaskName, DispatchError> {
-            let task_name: TaskName = tx_id
+        pub fn make_schedule_id(tx_id: &T::Hash, nonce: u32) -> Result<TaskName, DispatchError> {
+            let task_name = T::Hashing::hash_of(&(tx_id, nonce).encode())
                 .clone()
                 .as_ref()
                 .try_into()
@@ -345,23 +392,22 @@ pub mod pallet {
 
         /// Schedules a runtime call for delayed execution.
         /// This is intended to be called by the `TransactionExtension`, NOT directly by users.
-        pub fn do_schedule_dispatch(
+        pub fn do_schedule_transfer(
             origin: T::RuntimeOrigin,
-            call: <T as Config>::RuntimeCall,
+            dest: <<T as frame_system::Config>::Lookup as StaticLookup>::Source,
+            amount: BalanceOf<T>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
             let (delay, _) =
                 Self::reversible_accounts(&who).ok_or(Error::<T>::AccountNotReversible)?;
 
-            ensure!(T::CallFilter::contains(&call), Error::<T>::FilteredCall);
+            let transfer_call: T::RuntimeCall = pallet_balances::Call::<T>::transfer_keep_alive {
+                dest: dest.clone(),
+                value: amount,
+            }
+            .into();
 
-            let tx_id = T::Hashing::hash_of(&(who.clone(), call.clone()).encode());
-
-            // Ensure this tx_id isn't already pending (should be rare)
-            ensure!(
-                !PendingDispatches::<T>::contains_key(&tx_id),
-                Error::<T>::AlreadyScheduled
-            );
+            let tx_id = T::Hashing::hash_of(&(who.clone(), transfer_call.clone()).encode());
 
             // Check if the account can accommodate another pending transaction
             AccountPendingIndex::<T>::mutate(&who, |current_count| -> Result<(), DispatchError> {
@@ -377,14 +423,29 @@ pub mod pallet {
                 T::BlockNumberProvider::current_block_number().saturating_add(delay),
             );
 
-            let call = T::Preimages::bound(call)?;
+            let call = T::Preimages::bound(transfer_call.into())?;
 
             // Store details before scheduling
-            PendingDispatches::<T>::insert(&tx_id, (who.clone(), Box::new(call.clone())));
+            let new_pending = if let Some(pending) = PendingTransfers::<T>::get(&tx_id) {
+                PendingTransfer {
+                    who: who.clone(),
+                    call,
+                    amount,
+                    count: pending.count.saturating_add(1),
+                }
+            } else {
+                PendingTransfer {
+                    who: who.clone(),
+                    call,
+                    amount,
+                    count: 1,
+                }
+            };
+            let schedule_id = Self::make_schedule_id(&tx_id, new_pending.count)?;
 
-            let schedule_id = Self::make_schedule_id(&tx_id)?;
+            PendingTransfers::<T>::insert(&tx_id, new_pending);
 
-            let bounded_call = T::Preimages::bound(Call::<T>::execute_dispatch { tx_id }.into())?;
+            let bounded_call = T::Preimages::bound(Call::<T>::execute_transfer { tx_id }.into())?;
 
             // Schedule the `do_execute` call
             T::Scheduler::schedule_named(
@@ -400,6 +461,13 @@ pub mod pallet {
                 Error::<T>::SchedulingFailed
             })?;
 
+            // Hold the funds for the delay period
+            pallet_balances::Pallet::<T>::hold(
+                &HoldReason::ScheduledTransfer.into(),
+                &who,
+                amount,
+            )?;
+
             Self::deposit_event(Event::TransactionScheduled {
                 who,
                 tx_id,
@@ -410,26 +478,44 @@ pub mod pallet {
         }
 
         /// Cancels a previously scheduled transaction. Internal logic used by `cancel` extrinsic.
-        fn cancel_dispatch(who: &T::AccountId, tx_id: T::Hash) -> DispatchResult {
+        fn cancel_transfer(who: &T::AccountId, tx_id: T::Hash) -> DispatchResult {
             // Retrieve owner from storage to verify ownership
-            let (owner, _) =
-                PendingDispatches::<T>::get(&tx_id).ok_or(Error::<T>::PendingTxNotFound)?;
+            let pending =
+                PendingTransfers::<T>::get(&tx_id).ok_or(Error::<T>::PendingTxNotFound)?;
 
-            ensure!(&owner == who, Error::<T>::NotOwner);
+            ensure!(&pending.who == who, Error::<T>::NotOwner);
 
             // Remove from main storage
-            PendingDispatches::<T>::remove(&tx_id);
+            PendingTransfers::<T>::mutate(&tx_id, |pending_opt| {
+                if let Some(pending) = pending_opt {
+                    if pending.count > 1 {
+                        // If there are more than one identical transactions, decrement the count
+                        pending.count = pending.count.saturating_sub(1);
+                    } else {
+                        // Otherwise, remove the transaction from storage
+                        *pending_opt = None;
+                    }
+                }
+            });
 
             // Decrement account index
-            AccountPendingIndex::<T>::mutate(&owner, |current_count| {
+            AccountPendingIndex::<T>::mutate(&pending.who, |current_count| {
                 // Decrement the count of pending transactions for the account.
                 *current_count = current_count.saturating_sub(1);
             });
 
-            let schedule_id = Self::make_schedule_id(&tx_id)?;
+            let schedule_id = Self::make_schedule_id(&tx_id, pending.count)?;
 
             // Cancel the scheduled task
             T::Scheduler::cancel_named(schedule_id).map_err(|_| Error::<T>::CancellationFailed)?;
+
+            // Release the funds
+            pallet_balances::Pallet::<T>::release(
+                &HoldReason::ScheduledTransfer.into(),
+                &pending.who,
+                pending.amount,
+                Precision::Exact,
+            )?;
 
             Self::deposit_event(Event::TransactionCancelled {
                 who: who.clone(),
