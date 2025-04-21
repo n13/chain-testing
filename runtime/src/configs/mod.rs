@@ -106,7 +106,7 @@ impl pallet_qpow::Config for Runtime {
 	type WeightInfo = pallet_qpow::DefaultWeightInfo;
 	type InitialDifficulty = ConstU64<5500000000>; //Min + 5
 	type MinDifficulty = ConstU64<50000000000>;
-	type TargetBlockTime = ConstU64<1000>;
+	type TargetBlockTime = ConstU64<5000>;
 	type AdjustmentPeriod = ConstU32<10>;
 	type DampeningFactor = ConstU64<8>;
 	type BlockTimeHistorySize = ConstU32<60>;

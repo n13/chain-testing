@@ -7,8 +7,9 @@ use sha2::{Digest, Sha256};
 use sha3::Sha3_512;
 
 pub const CHUNK_SIZE: usize = 32;
-pub const NUM_CHUNKS: usize = 512 / CHUNK_SIZE; // Should be 16
-pub const MAX_DISTANCE: u64 = (1u64 << CHUNK_SIZE) * NUM_CHUNKS as u64;
+pub const NUM_CHUNKS: usize = 512 / CHUNK_SIZE;
+pub const DIMENSION_SIZE: u64 = 1 << CHUNK_SIZE;
+pub const MAX_DISTANCE: u64 = DIMENSION_SIZE * NUM_CHUNKS as u64;
 
 // Common verification logic
 pub fn is_valid_nonce(header: [u8; 32], nonce: [u8; 64], difficulty: u64) -> bool {
@@ -79,7 +80,7 @@ pub fn is_coprime(a: &U512, b: &U512) -> bool {
 
 /// Split a 512-bit number into 32-bit chunks
 pub fn split_chunks(num: &U512) -> [u32; NUM_CHUNKS] {
-    let mut chunks: [u32; 16] = [0u32; NUM_CHUNKS];
+    let mut chunks: [u32; NUM_CHUNKS] = [0u32; NUM_CHUNKS];
     let mask = (U512::one() << CHUNK_SIZE) - U512::one();
 
     for i in 0..NUM_CHUNKS {
@@ -98,10 +99,11 @@ fn l1_distance(original: &[u32], solution: &[u32]) -> u64 {
         .zip(solution.iter())
         .map(|(a, b)| if a > b { a - b } else { b - a })
         .map(|x| x as u64)
+        .map(|x| x.min(DIMENSION_SIZE - x))
         .sum()
 }
 
-pub fn hash_to_group_bigint_split(h: &U512, m: &U512, n: &U512, solution: &U512) -> [u32; 16] {
+pub fn hash_to_group_bigint_split(h: &U512, m: &U512, n: &U512, solution: &U512) -> [u32; NUM_CHUNKS] {
     let result = hash_to_group_bigint(h, m, n, solution);
 
     split_chunks(&result)
