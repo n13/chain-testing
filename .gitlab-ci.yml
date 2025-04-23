@@ -106,7 +106,7 @@ variables:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -Cdebug-assertions=y
   RUSTUP_TOOLCHAIN: nightly-2024-12-14
-  ssh_command: ssh -o IdentityFile=/root/.ssh/id_ed25519 -o IdentitiesOnly=yes
+  ssh_command: ssh -o IdentityFile=/root/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new
   PIP_ROOT_USER_ACTION: ignore
   FF_SCRIPT_SECTIONS: "true"
 
