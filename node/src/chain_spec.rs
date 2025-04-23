@@ -37,10 +37,9 @@ pub fn live_testnet_chain_spec() -> Result<ChainSpec, String> {
 		WASM_BINARY.ok_or_else(|| "Live testnet wasm not available".to_string())?,
 		None,
 	)
-	.with_name("Resonance Testnet") // Your desired name
-	.with_id("resonance_testnet")   // Your desired ID
-	.with_chain_type(ChainType::Live) // Set chain type to Live
-	// Use the genesis preset we defined in runtime/src/genesis_config_presets.rs
+	.with_name("Resonance Testnet") 
+	.with_id("resonance_testnet") 
+	.with_chain_type(ChainType::Live)
 	.with_genesis_config_preset_name(LIVE_TESTNET_RUNTIME_PRESET)
 	.build())
 }
