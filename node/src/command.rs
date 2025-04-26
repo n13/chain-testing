@@ -7,7 +7,7 @@ use crate::{
 use frame_benchmarking_cli::{BenchmarkCmd, ExtrinsicFactory, SUBSTRATE_REFERENCE_HARDWARE};
 use rand::Rng;
 use sc_cli::SubstrateCli;
-use sc_service::PartialComponents;
+use sc_service::{BlocksPruning, PartialComponents, PruningMode};
 use sp_core::crypto::AccountId32;
 use resonance_runtime::{Block, EXISTENTIAL_DEPOSIT};
 use sp_keyring::Sr25519Keyring;
@@ -43,6 +43,8 @@ impl SubstrateCli for Cli {
 	fn load_spec(&self, id: &str) -> Result<Box<dyn sc_service::ChainSpec>, String> {
 		Ok(match id {
 			"dev" => Box::new(chain_spec::development_chain_spec()?),
+			"live_testnet_local" => Box::new(chain_spec::live_testnet_chain_spec()?),
+			"live_testnet" => Box::new(chain_spec::ChainSpec::from_json_bytes(include_bytes!("chain-specs/live-testnet.json"))?),
 			"" | "local" => Box::new(chain_spec::local_chain_spec()?),
 			path =>
 				Box::new(chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from(path))?),
@@ -53,6 +55,7 @@ impl SubstrateCli for Cli {
 /// Parse and run command line arguments
 pub fn run() -> sc_cli::Result<()> {
 	let cli = Cli::from_args();
+
 
 	match &cli.subcommand {
 		Some(Subcommand::Key(cmd)) => match cmd {
@@ -261,8 +264,14 @@ pub fn run() -> sc_cli::Result<()> {
 			runner.sync_run(|config| cmd.run::<Block>(&config))
 		},
 		None => {
+			log::info!("Run until exit ....");
 			let runner = cli.create_runner(&cli.run)?;
-			runner.run_node_until_exit(|config| async move {
+			runner.run_node_until_exit(|mut config| async move {
+
+				//Obligatory configuration for all node holders
+				config.blocks_pruning = BlocksPruning::KeepFinalized;
+				config.state_pruning = Some(PruningMode::ArchiveCanonical);
+
 				match config.network.network_backend.unwrap_or_default() {
 					sc_network::config::NetworkBackendType::Libp2p => service::new_full::<
 						sc_network::NetworkWorker<
