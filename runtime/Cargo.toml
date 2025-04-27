@@ -51,17 +51,20 @@ frame-system-rpc-runtime-api.workspace = true
 pallet-transaction-payment-rpc-runtime-api.workspace = true
 frame-benchmarking = { version = "39.0.0", default-features = false }
 frame-system-benchmarking = { optional = true, workspace = true }
+pallet-faucet = {workspace = true, default-features = false}
 pallet-mining-rewards = {workspace = true, default-features = false}
 pallet-qpow = { workspace = true, default-features = false}
 pallet-wormhole = { workspace = true, default-features = false}
+pallet-reversible-transfers = { workspace = true, default-features = false }
 pallet-vesting = { workspace = true, default-features = false }
 sp-consensus-qpow = { workspace = true, default-features = false}
+sp-faucet = {workspace = true, default-features = false}
 log = { workspace = true }
 
 dilithium-crypto = { path = "../dilithium-crypto", default-features = false }
-primitive-types = {default-features=false, workspace = true}
-sp-runtime-interface = { version="29.0.0", default-features=false }
-sp-std = { workspace = true, default-features=false}
+primitive-types = { default-features = false, workspace = true }
+sp-runtime-interface = { workspace = true, default-features = false }
+sp-std = { workspace = true, default-features = false }
 
 poseidon-resonance = { workspace = true, features = ["serde"] }
 
@@ -73,6 +76,7 @@ sp-std = { version = "14.0.0", default-features = true }
 hdwallet = { path = "../dilithium-crypto/hdwallet", default-features = true }
 env_logger = "0.11.5"
 sp-keyring = { workspace = true, features = ["std"]}
+sp-io = { workspace = true, default-features = true }
 
 [features]
 default = ["std"]
@@ -87,6 +91,7 @@ std = [
 	"frame-system/std",
 	"frame-try-runtime?/std",
 	"pallet-balances/std",
+	"pallet-faucet/std",
 	"pallet-mining-rewards/std",
 	"pallet-conviction-voting/std",
 	"pallet-preimage/std",
@@ -104,6 +109,7 @@ std = [
 	"serde_json/std",
 	"sp-api/std",
 	"sp-block-builder/std",
+	"sp-faucet/std",
 	"sp-consensus-qpow/std",
 	"sp-core/std",
 	"sp-genesis-builder/std",
@@ -119,7 +125,8 @@ std = [
 	"sp-runtime-interface/std",
 	"scale-info/std",
 	"dilithium-crypto/full_crypto",
-	"poseidon-resonance/std"
+	"poseidon-resonance/std",
+	"pallet-reversible-transfers/std",
 ]
 
 
@@ -138,7 +145,8 @@ runtime-benchmarks = [
 	"sp-runtime/runtime-benchmarks",
 	"pallet-vesting/runtime-benchmarks",
 	"pallet-wormhole/runtime-benchmarks",
-	"pallet-mining-rewards/runtime-benchmarks"
+	"pallet-mining-rewards/runtime-benchmarks",
+	"pallet-reversible-transfers/runtime-benchmarks",
 ]
 
 try-runtime = [
