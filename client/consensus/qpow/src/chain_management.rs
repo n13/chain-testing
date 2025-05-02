@@ -91,11 +91,9 @@ where
 
         let max_reorg_depth = self.client.runtime_api().get_max_reorg_depth(best_hash)
             .expect("Failed to get max reorg depth");
-        log::info!("Max reorg depth from runtime: {}", max_reorg_depth);
 
         // Calculate how far back to finalize
         let finalize_depth = max_reorg_depth.saturating_sub(1);
-        log::info!("Calculated finalize depth: {}", finalize_depth);
 
         // Only finalize if we have enough blocks
         if best_number <= finalize_depth.into() {
