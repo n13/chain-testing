@@ -380,6 +380,12 @@ where
             current_height, competing_height);
 
         while competing_height > current_height {
+            reorg_depth += 1;
+            log::info!("O3 solution - Incrementing reorg depth: {}", reorg_depth);
+            log::info!("Competing chain higher: moving down from #{} ({:?})",
+                competing_height,
+                competing_hash
+            );
             log::info!(
                 "Competing chain higher: moving down from #{} ({:?})",
                 competing_height,
