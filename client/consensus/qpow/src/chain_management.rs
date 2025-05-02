@@ -65,14 +65,14 @@ where
     where
         C: Finalizer<B, BE>,
     {
-        log::info!("Starting finalization process");
+        log::info!("✓✓✓ Starting finalization process");
 
         // Get the current best block
         let best_hash = self.client.info().best_hash;
         log::info!("Current best hash: {:?}", best_hash);
 
         if best_hash == Default::default() {
-            log::info!("No blocks to finalize - best hash is default");
+            log::info!("✓ No blocks to finalize - best hash is default");
             return Ok(());  // No blocks to finalize
         }
 
@@ -97,7 +97,7 @@ where
 
         // Only finalize if we have enough blocks
         if best_number <= finalize_depth.into() {
-            log::info!("Chain not long enough for finalization. Best number: {}, Required: > {}",
+            log::info!("✓ Chain not long enough for finalization. Best number: {}, Required: > {}",
                 best_number, finalize_depth);
             return Ok(());  // Chain not long enough yet
         }
@@ -117,7 +117,7 @@ where
                 sp_consensus::Error::Other(format!("No block found at #{}", finalize_number).into())
             })?;
 
-        log::info!("Found hash for finalization target: {:?}", finalize_hash);
+        log::info!("✓ Found hash for finalization target: {:?}", finalize_hash);
 
         // Get last finalized block before attempting finalization
         let last_finalized_before = self.client.info().finalized_number;
@@ -134,7 +134,7 @@ where
         let last_finalized_after = self.client.info().finalized_number;
 
         if last_finalized_after > last_finalized_before {
-            log::info!("Finalization successful: moved from #{} to #{}",
+            log::info!("✓ Finalization successful: moved from #{} to #{}",
                 last_finalized_before, last_finalized_after);
         } else {
             log::info!("Finalization might not have progressed: before #{}, after #{}",
@@ -783,32 +783,12 @@ impl ChainManagement {
                 log::info!("Listening for block import notifications");
 
                 while let Some(notification) = import_notification_stream.next().await {
-                    log::info!(
-                        "Received block import notification: #{} ({:?}), is_new_best: {}",
-                        notification.header.number(),
-                        notification.hash,
-                        notification.is_new_best
-                    );
 
-                    // Only attempt finalization on new best blocks
-                    if notification.is_new_best {
-                        log::info!(
-                            "Attempting to finalize after import of new best block #{}: {:?}",
-                            notification.header.number(),
-                            notification.hash
-                        );
-
-                        if let Err(e) = select_chain.finalize_canonical_at_depth() {
-                            log::info!("Failed to finalize blocks: {:?}", e);
-                        } else {
-                            log::info!("Successfully processed finalization after import of block #{}",
-                                notification.header.number());
-                        }
+                    if let Err(e) = select_chain.finalize_canonical_at_depth() {
+                        log::info!("Failed to finalize blocks: {:?}", e);
                     } else {
-                        log::info!(
-                            "Skipping finalization for block #{} as it's not a new best block",
-                            notification.header.number()
-                        );
+                        log::info!("Successfully processed finalization after import of block #{}",
+                            notification.header.number());
                     }
                 }
 
