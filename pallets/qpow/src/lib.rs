@@ -297,7 +297,7 @@ pub mod pallet {
 			// Update TotalWork
 			// TODO: put this in its own function for clarity
 			let old_total_work = <TotalWork<T>>::get();
-			let current_work = Self::get_max_distance() / current_distance_threshold;
+			let current_work = Self::get_difficulty();
 			let new_total_work = old_total_work.saturating_add(current_work);
 			<TotalWork<T>>::put(new_total_work);
 			log::info!(
@@ -506,6 +506,10 @@ pub mod pallet {
 
 		pub fn get_max_distance() -> U512 {
 			get_initial_distance_threshold::<T>().shl(1)
+		}
+
+		pub fn get_difficulty() -> U512 {
+			Self::get_max_distance() / Self::get_distance_threshold()
 		}
 
 		pub fn get_distance_threshold_at_block(block_number: BlockNumberFor<T>) -> U512 {

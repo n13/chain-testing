@@ -145,6 +145,10 @@ impl_runtime_apis! {
 			pallet_qpow::Pallet::<Self>::get_max_reorg_depth()
 		}
 
+		fn get_difficulty() -> U512 {
+			pallet_qpow::Pallet::<Self>::get_difficulty()
+		}
+
 		fn get_distance_threshold() -> U512 {
 			pallet_qpow::Pallet::<Self>::get_distance_threshold()
 		}

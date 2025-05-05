@@ -41,6 +41,9 @@ sp_api::decl_runtime_apis! {
         /// Get the max possible distance_threshold for work calculation
         fn get_max_distance() -> U512;
 
+        /// Get the current difficulty (max_distance / distance_threshold)
+        fn get_difficulty() -> U512;
+
         /// Get the current distance_threshold target for proof generation
         fn get_distance_threshold() -> U512;
 
