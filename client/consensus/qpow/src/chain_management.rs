@@ -151,51 +151,6 @@ where
         Ok(())
     }
 
-    pub fn calculate_block_work(&self, chain_head: &B::Header) -> Result<U512, sp_consensus::Error> {
-        let current_hash = chain_head.hash();
-
-        let header = self.client.header(current_hash)
-            .map_err(|e| sp_consensus::Error::Other(format!("Blockchain error: {:?}", e).into()))?
-            .ok_or_else(|| sp_consensus::Error::Other(format!("Missing Header {:?}", current_hash).into()))?;
-
-        // Stop at genesis block
-        if header.number().is_zero() {
-            let genesis_work = self.client.runtime_api().get_distance_threshold(current_hash.clone())
-                .map_err(|e| sp_consensus::Error::Other(format!("Failed to get genesis distance_threshold {:?}", e).into()))?;
-
-            return Ok(genesis_work);
-        }
-
-        let seal_log = header.digest().logs().iter().find(|item|
-            item.as_seal().is_some())
-            .ok_or_else(|| sp_consensus::Error::Other("No seal found in block digest".into()))?;
-
-        let (_, seal_data) = seal_log.as_seal().ok_or_else(|| sp_consensus::Error::Other("Invalid seal format".into()))?;
-
-        // Convert header hash to [u8; 32]
-        let header_bytes: [u8; 32] = header.hash().as_ref().try_into().expect("Failed to convert header H256 to [u8; 32]; this should never happen");
-
-        // Try to decode nonce from seal data
-        let nonce = if seal_data.len() == 64 {
-            let mut nonce_bytes = [0u8; 64];
-            nonce_bytes.copy_from_slice(&seal_data[0..64]);
-            nonce_bytes
-        } else {
-            //seal data doesn't match expected format
-            return Err(sp_consensus::Error::Other(format!("Invalid seal data length: {}", seal_data.len()).into()));
-        };
-
-        let max_distance = self.client.runtime_api().get_max_distance(current_hash.clone())
-            .map_err(|e| sp_consensus::Error::Other(format!("Failed to get max distance: {:?}", e).into()))?;
-
-        let actual_distance = self.client.runtime_api().get_nonce_distance(current_hash.clone(), header_bytes, nonce)
-            .map_err(|e| sp_consensus::Error::Other(format!("Failed to get nonce distance: {:?}", e).into()))?;
-
-        let block_work = max_distance.saturating_sub(actual_distance);
-
-        Ok(block_work)
-    }
-
     fn calculate_chain_work(&self, chain_head: &B::Header) -> Result<U512, sp_consensus::Error> {
         // calculate cumulative work of a chain
 

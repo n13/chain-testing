@@ -183,6 +183,10 @@ impl_runtime_apis! {
 			<pallet_qpow::LatestNonce<Runtime>>::get()
 		}
 
+		fn get_chain_height() -> u32 {
+			frame_system::pallet::Pallet::<Self>::block_number()
+		}
+
 		fn get_random_rsa(header: &[u8; 32]) -> (U512, U512) {
 			pallet_qpow::Pallet::<Self>::get_random_rsa(header)
 		}

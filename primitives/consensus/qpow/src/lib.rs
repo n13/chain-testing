@@ -68,6 +68,8 @@ sp_api::decl_runtime_apis! {
         /// Retrieve latest submitted proof
         fn get_latest_nonce() -> Option<[u8; 64]>;
 
+        fn get_chain_height() -> u32;
+
         fn get_random_rsa(header: &[u8; 32]) -> (U512, U512);
         fn hash_to_group_bigint(h: &U512, m: &U512, n: &U512, solution: &U512) -> U512;
     }

@@ -295,7 +295,6 @@ pub mod pallet {
 			<BlockDistanceThresholds<T>>::insert(current_block_number, current_distance_threshold);
 
 			// Update TotalWork
-			// TODO: put this in its own function for clarity
 			let old_total_work = <TotalWork<T>>::get();
 			let current_work = Self::get_difficulty();
 			let new_total_work = old_total_work.saturating_add(current_work);
