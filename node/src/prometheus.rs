@@ -99,6 +99,8 @@ impl ResonanceBusinessMetrics {
                 U512::zero()
             });
 
+        log::warn!("😵 difficulty reported: {:?}", difficulty);
+
         // Update the metrics with the values we retrieved
         gauge.with_label_values(&["chain_height"]).set(chain_height as f64);
         gauge.with_label_values(&["block_time_sum"]).set(block_time_sum as f64);

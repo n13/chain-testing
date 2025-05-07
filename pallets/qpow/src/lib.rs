@@ -20,7 +20,8 @@ pub mod pallet {
 	use frame_support::sp_runtime::Saturating;
 	use frame_support::sp_runtime::traits::{One, Zero};
 	use sp_core::U512;
-	use core::ops::Shl;
+	use core::ops::{Shl, Shr};
+	use frame_support::traits::ConstU8;
 	use sp_std::prelude::*;
 	use qpow_math::{is_valid_nonce, get_nonce_distance, get_random_rsa, hash_to_group_bigint};
 
@@ -68,6 +69,9 @@ pub mod pallet {
 
 		#[pallet::constant]
 		type InitialDistanceThresholdExponent: Get<u32>;
+
+		#[pallet::constant]
+		type DifficultyAdjustPercentClamp: Get<u8>;
 
 		#[pallet::constant]
 		type TargetBlockTime: Get<u64>;
@@ -275,12 +279,14 @@ pub mod pallet {
 			median_time
 		}
 
-		fn percentage_change(a: U512, b: U512) -> (U512, bool) {
+		fn percentage_change(big_a: U512, big_b: U512) -> (U512, bool) {
+			let a = big_a.shr(10);
+			let b = big_b.shr(10);
 			let (larger, smaller) = if a > b { (a, b) } else { (b, a) };
 			let abs_diff = larger - smaller;
-			let change = (abs_diff / a).saturating_mul(U512::from(100u64));
+			let change = abs_diff.saturating_mul(U512::from(100u64)) / a;
 
-			(change, b > a)
+			(change, b >= a)
 		}
 
 		fn adjust_distance_threshold() {
@@ -383,10 +389,12 @@ pub mod pallet {
 		) -> U512 {
 			log::info!("📊 Calculating new distance_threshold ---------------------------------------------");
 			// Calculate ratio using FixedU128
-			let ratio = FixedU128::from_rational(observed_block_time as u128, target_block_time as u128);
+			let clamp = FixedU128::from_rational(T::DifficultyAdjustPercentClamp::get() as u128, 100u128);
 			let one = FixedU128::from_rational(1u128, 1u128);
-
-			log::info!("💧 Ratio as FixedU128: {} ", ratio);
+			let ratio = FixedU128::from_rational(observed_block_time as u128, target_block_time as u128)
+				.min(one.saturating_add(clamp))
+				.max(one.saturating_sub(clamp));
+			log::info!("💧 Clamped block_time ratio as FixedU128: {} ", ratio);
 
 			// Calculate adjusted distance_threshold
 			let mut adjusted = if ratio == one {
@@ -417,7 +425,7 @@ pub mod pallet {
 
 			log::info!("🟢 Current Distance Threshold: {}", current_distance_threshold);
 			log::info!("🕒 Observed Block Time Sum: {}ms", observed_block_time);
-			log::info!("🎯 Target Block Time Sum: {}ms", target_block_time);
+			log::info!("🎯 Target Block Time Sum:   {}ms", target_block_time);
 			log::info!("🟢 Next Distance Threshold: {}", adjusted);
 
 			adjusted
@@ -504,7 +512,7 @@ pub mod pallet {
 		}
 
 		pub fn get_max_distance() -> U512 {
-			get_initial_distance_threshold::<T>().shl(1)
+			get_initial_distance_threshold::<T>().shl(2)
 		}
 
 		pub fn get_difficulty() -> U512 {
