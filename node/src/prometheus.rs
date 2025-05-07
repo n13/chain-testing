@@ -99,14 +99,14 @@ impl ResonanceBusinessMetrics {
                 U512::zero()
             });
 
-        log::warn!("😵 difficulty reported: {:?}", difficulty);
+        log::warn!("😵 difficulty reported: {:?}", difficulty.low_u64() as f64);
 
         // Update the metrics with the values we retrieved
         gauge.with_label_values(&["chain_height"]).set(chain_height as f64);
         gauge.with_label_values(&["block_time_sum"]).set(block_time_sum as f64);
         gauge.with_label_values(&["median_block_time"]).set(median_block_time as f64);
         gauge.with_label_values(&["distance_threshold"]).set(Self::pack_u512_to_f64(distance_threshold));
-        gauge.with_label_values(&["difficulty"]).set(Self::pack_u512_to_f64(difficulty));
+        gauge.with_label_values(&["difficulty"]).set(difficulty.low_u64() as f64);
         gauge.with_label_values(&["last_block_time"]).set(last_block_time as f64);
         gauge.with_label_values(&["last_block_duration"]).set(last_block_duration as f64);
     }
