@@ -168,7 +168,6 @@ pub mod pallet {
 		/// Called when there is remaining weight at the end of the block.
 		fn on_idle(_block_number: BlockNumberFor<T>, _remaining_weight: Weight) -> Weight {
 			if <LastBlockTime<T>>::get() == 0 {
-				log::warn!("🔥 on_idle");
 				<LastBlockTime<T>>::put(pallet_timestamp::Pallet::<T>::now().saturated_into::<u64>());
 				let initial_distance_threshold: U512 = get_initial_distance_threshold::<T>();
 				<CurrentDistanceThreshold<T>>::put(initial_distance_threshold);
