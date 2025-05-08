@@ -491,7 +491,7 @@ mod tests {
 
         let job = MiningJob {
             header_hash: [1; 32], // Use a non-zero hash
-            distance_threshold: U512::MAX, // Very low difficulty
+            distance_threshold: U512::MAX, // Maximum threshold, which corresponds to the lowest mining difficulty
             nonce_start: U512::from(0),
             // Small nonce range to ensure it finishes if no solution found
             nonce_end: U512::from(500),
