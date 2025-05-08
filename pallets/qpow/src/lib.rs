@@ -105,7 +105,6 @@ pub mod pallet {
 	#[pallet::genesis_build]
 	impl<T: Config> BuildGenesisConfig for GenesisConfig<T> {
 		fn build(&self) {
-			log::warn!("🔥 build");
 			let initial_proof = [0u8; 64];
 			<LatestNonce<T>>::put(initial_proof);
 			let initial_distance_threshold = get_initial_distance_threshold::<T>();
@@ -361,11 +360,11 @@ pub mod pallet {
 					let (pct_change, is_positive) = Self::percentage_change(current_distance_threshold, new_distance_threshold);
 
 					log::info!(
-						"🟢 Adjusted mining distance threshold {}{}%: {} -> {} (observed block time: {}ms, target: {}ms) ",
+						"🟢 Adjusted mining distance threshold {}{}%: {}.. -> {}.. (observed block time: {}ms, target: {}ms) ",
 						if is_positive {"+"} else {"-"},
 						pct_change,
-						current_distance_threshold,
-						new_distance_threshold,
+						current_distance_threshold.shr(300),
+						new_distance_threshold.shr(300),
 						observed_block_time,
 						target_time
 					);
@@ -421,10 +420,10 @@ pub mod pallet {
 				}
 			}
 
-			log::info!("🟢 Current Distance Threshold: {}", current_distance_threshold);
+			log::info!("🟢 Current Distance Threshold: {}..", current_distance_threshold.shr(100));
+			log::info!("🟢 Next Distance Threshold:    {}..", adjusted.shr(100));
 			log::info!("🕒 Observed Block Time Sum: {}ms", observed_block_time);
 			log::info!("🎯 Target Block Time Sum:   {}ms", target_block_time);
-			log::info!("🟢 Next Distance Threshold: {}", adjusted);
 
 			adjusted
 		}

@@ -50,7 +50,7 @@ where
     BE: sc_client_api::Backend<B> + 'static,
 {
     pub fn new(backend: Arc<BE>, client: Arc<C>, algorithm: QPowAlgorithm<B,C>) -> Self {
-        log::info!("Creating new HeaviestChain instance");
+        log::debug!("Creating new HeaviestChain instance");
 
         Self {
             backend,
@@ -65,29 +65,29 @@ where
     where
         C: Finalizer<B, BE>,
     {
-        log::info!("✓✓✓ Starting finalization process");
+        log::debug!("✓✓✓ Starting finalization process");
 
         // Get the current best block
         let best_hash = self.client.info().best_hash;
-        log::info!("Current best hash: {:?}", best_hash);
+        log::debug!("Current best hash: {:?}", best_hash);
 
         if best_hash == Default::default() {
-            log::info!("✓ No blocks to finalize - best hash is default");
+            log::debug!("✓ No blocks to finalize - best hash is default");
             return Ok(());  // No blocks to finalize
         }
 
         let best_header = self.client.header(best_hash)
             .map_err(|e| {
-                log::info!("Failed to get header for best hash: {:?}, error: {:?}", best_hash, e);
+                log::error!("Failed to get header for best hash: {:?}, error: {:?}", best_hash, e);
                 sp_consensus::Error::Other(format!("Blockchain error: {:?}", e).into())
             })?
             .ok_or_else(|| {
-                log::info!("Missing header for best hash: {:?}", best_hash);
+                log::error!("Missing header for best hash: {:?}", best_hash);
                 sp_consensus::Error::Other("Missing current best header".into())
             })?;
 
         let best_number = *best_header.number();
-        log::info!("Current best block number: {}", best_number);
+        log::debug!("Current best block number: {}", best_number);
 
         let max_reorg_depth = self.client.runtime_api().get_max_reorg_depth(best_hash)
             .expect("Failed to get max reorg depth");
@@ -97,51 +97,43 @@ where
 
         // Only finalize if we have enough blocks
         if best_number <= finalize_depth.into() {
-            log::info!("✓ Chain not long enough for finalization. Best number: {}, Required: > {}",
+            log::debug!("✓ Chain not long enough for finalization. Best number: {}, Required: > {}",
                 best_number, finalize_depth);
             return Ok(());  // Chain not long enough yet
         }
 
         // Calculate block number to finalize
         let finalize_number = best_number - finalize_depth.into();
-        log::info!("Target block number to finalize: {}", finalize_number);
+        log::debug!("Target block number to finalize: {}", finalize_number);
 
         // Get the hash for that block number in the current canonical chain
         let finalize_hash = self.client.hash(finalize_number)
             .map_err(|e| {
-                log::info!("Failed to get hash for block #{}: {:?}", finalize_number, e);
+                log::error!("Failed to get hash for block #{}: {:?}", finalize_number, e);
                 sp_consensus::Error::Other(format!("Failed to get hash at #{}: {:?}", finalize_number, e).into())
             })?
             .ok_or_else(|| {
-                log::info!("No block found at #{} for finalization", finalize_number);
+                log::error!("No block found at #{} for finalization", finalize_number);
                 sp_consensus::Error::Other(format!("No block found at #{}", finalize_number).into())
             })?;
 
-        log::info!("✓ Found hash for finalization target: {:?}", finalize_hash);
+        log::debug!("✓ Found hash for finalization target: {:?}", finalize_hash);
 
         // Get last finalized block before attempting finalization
         let last_finalized_before = self.client.info().finalized_number;
-        log::info!("Last finalized block before attempt: #{}", last_finalized_before);
+        log::debug!("Last finalized block before attempt: #{}", last_finalized_before);
 
         // Finalize the block
         self.client.finalize_block(finalize_hash, None, true)
             .map_err(|e| {
-                log::info!("Failed to finalize block #{} ({:?}): {:?}", finalize_number, finalize_hash, e);
+                log::error!("Failed to finalize block #{} ({:?}): {:?}", finalize_number, finalize_hash, e);
                 sp_consensus::Error::Other(format!("Failed to finalize block #{}: {:?}", finalize_number, e).into())
             })?;
 
         // Check if finalization was successful
         let last_finalized_after = self.client.info().finalized_number;
 
-        if last_finalized_after > last_finalized_before {
-            log::info!("✓ Finalization successful: moved from #{} to #{}",
-                last_finalized_before, last_finalized_after);
-        } else {
-            log::info!("Finalization might not have progressed: before #{}, after #{}",
-                last_finalized_before, last_finalized_after);
-        }
-
-        log::info!(
+        log::debug!(
             "✓ Finalization stats: best={}, finalized={}, finalize_depth={}, target_finalize={}",
             best_number, last_finalized_after, finalize_depth, finalize_number
         );
@@ -157,37 +149,17 @@ where
         let current_hash = chain_head.hash();
         let current_number = *chain_head.number();
 
-        log::info!(
-            "Calculating work for chain with head: {:?} (#{:?})",
-            current_hash,
-            current_number
-        );
-
-        if chain_head.number().is_zero() {
-            // Genesis block
-            log::info!("Calculating work for genesis block");
-
-            let genesis_work = self.client.runtime_api().get_distance_threshold(current_hash.clone())
-                .map_err(|e| {
-                    log::info!("Failed to get genesis difficulty: {:?}", e);
-                    sp_consensus::Error::Other(format!("Failed to get genesis difficulty {:?}", e).into())
-                })?;
-
-            log::info!("Calculating difficulty for genesis block: {} ", genesis_work);
-            return Ok(genesis_work);
-        }
-
-        log::info!("Getting total work for chain with head #{}", current_number);
         let total_work = self.client.runtime_api().get_total_work(current_hash.clone())
             .map_err(|e| {
-                log::info!("Failed to get total work for chain with head #{}: {:?}", current_number, e);
+                log::error!("Failed to get total work for chain with head #{}: {:?}", current_number, e);
                 sp_consensus::Error::Other(format!("Failed to get total difficulty {:?}", e).into())
             })?;
 
         log::info!(
-            "Total chain work: {:?} for chain with head at #{:?}",
+            "⛏️ Total chain work: {:?} for chain with head at #{:?} hash: {:?}",
             total_work,
-            current_number
+            current_number,
+            current_hash
         );
 
         Ok(total_work)
@@ -195,32 +167,32 @@ where
 
     /// Method to find best chain when there's no current best header
     async fn find_best_chain(&self, leaves: Vec<B::Hash>) -> Result<B::Header, sp_consensus::Error> {
-        log::info!("Finding best chain among {} leaves when no current best exists", leaves.len());
+        log::debug!("Finding best chain among {} leaves when no current best exists", leaves.len());
 
         let mut best_header = None;
         let mut best_work = U512::zero();
 
         for (idx, leaf_hash) in leaves.iter().enumerate() {
-            log::info!("Checking leaf [{}/{}]: {:?}", idx + 1, leaves.len(), leaf_hash);
+            log::debug!("Checking leaf [{}/{}]: {:?}", idx + 1, leaves.len(), leaf_hash);
 
             let header = self.client.header(*leaf_hash)
                 .map_err(|e| {
-                    log::info!("Blockchain error when getting header for leaf {:?}: {:?}", leaf_hash, e);
+                    log::error!("Blockchain error when getting header for leaf {:?}: {:?}", leaf_hash, e);
                     sp_consensus::Error::Other(format!("Blockchain error: {:?}", e).into())
                 })?
                 .ok_or_else(|| {
-                    log::info!("Missing header for leaf {:?}", leaf_hash);
+                    log::error!("Missing header for leaf {:?}", leaf_hash);
                     sp_consensus::Error::Other(format!("Missing header for {:?}", leaf_hash).into())
                 })?;
 
             let header_number = *header.number();
-            log::info!("Found header for leaf at height #{}", header_number);
+            log::debug!("Found header for leaf at height #{}", header_number);
 
             let chain_work = self.calculate_chain_work(&header)?;
-            log::info!("Chain work for leaf #{}: {}", header_number, chain_work);
+            log::debug!("Chain work for leaf #{}: {}", header_number, chain_work);
 
             if chain_work > best_work {
-                log::info!(
+                log::debug!(
                     "Found new best chain candidate: #{} (hash: {:?}) with work: {}",
                     header_number,
                     leaf_hash,
@@ -229,7 +201,7 @@ where
                 best_work = chain_work;
                 best_header = Some(header);
             } else {
-                log::info!(
+                log::debug!(
                     "Leaf #{} (hash: {:?}) has less work ({}) than current best ({})",
                     header_number,
                     leaf_hash,
@@ -247,7 +219,7 @@ where
                 best_work
             );
         } else {
-            log::info!("No valid chain found among the leaves");
+            log::error!("No valid chain found among the leaves");
         }
 
         best_header.ok_or(sp_consensus::Error::Other("No Valid Chain Found".into()))
@@ -264,7 +236,7 @@ where
         let current_height = *current_best.number();
         let competing_height = *competing_header.number();
 
-        log::info!(
+        log::debug!(
             "Finding common ancestor between current best #{} ({:?}) and competing #{} ({:?})",
             current_height,
             current_best_hash,
@@ -274,7 +246,7 @@ where
 
         // Quick check for identical headers
         if current_best_hash == competing_hash {
-            log::info!("Headers are identical, no reorganization needed");
+            log::debug!("Headers are identical, no reorganization needed");
             return Ok((current_best_hash, 0));
         }
 
@@ -285,14 +257,14 @@ where
         let mut reorg_depth = 0;
 
         // First, move the headers to the same height
-        log::info!("Phase 1: Aligning heights - current: {}, competing: {}",
+        log::debug!("Phase 1: Aligning heights - current: {}, competing: {}",
             current_height, competing_height);
 
         while current_height > competing_height {
             // Check if the blocks are identical during descent
             if current_best_hash == competing_hash {
                 // Fork point found early
-                log::info!(
+                log::debug!(
                     "Early fork point found during height alignment: {:?} at height {} with reorg depth {}",
                     current_best_hash,
                     current_height,
@@ -301,7 +273,7 @@ where
                 return Ok((current_best_hash, reorg_depth));
             }
 
-            log::info!(
+            log::debug!(
                 "Current chain higher: moving down from #{} ({:?}), reorg_depth: {}",
                 current_height,
                 current_best_hash,
@@ -310,11 +282,11 @@ where
 
             current_best_hash = self.client.header(current_best_hash)
                 .map_err(|e| {
-                    log::info!("Blockchain error when getting header for #{}: {:?}", current_height, e);
+                    log::error!("Blockchain error when getting header for #{}: {:?}", current_height, e);
                     sp_consensus::Error::Other(format!("Blockchain error: {:?}", e).into())
                 })?
                 .ok_or_else(|| {
-                    log::info!("Missing header at #{} ({:?})", current_height, current_best_hash);
+                    log::error!("Missing header at #{} ({:?})", current_height, current_best_hash);
                     sp_consensus::Error::Other("Missing header".into())
                 })?
                 .parent_hash().clone();
@@ -322,7 +294,7 @@ where
             current_height -= One::one();
             reorg_depth += 1;
 
-            log::info!(
+            log::debug!(
                 "Moved down current chain to #{} ({:?}), reorg_depth now: {}",
                 current_height,
                 current_best_hash,
@@ -331,17 +303,12 @@ where
         }
 
         // Similarly, if the competing chain is taller, move it down to the same height
-        log::info!("Phase 2: Aligning heights if competing chain is taller - current: {}, competing: {}",
+        log::debug!("Phase 2: Aligning heights if competing chain is taller - current: {}, competing: {}",
             current_height, competing_height);
 
         while competing_height > current_height {
             reorg_depth += 1;
-            log::info!("O3 solution - Incrementing reorg depth: {}", reorg_depth);
-            log::info!("Competing chain higher: moving down from #{} ({:?})",
-                competing_height,
-                competing_hash
-            );
-            log::info!(
+            log::debug!(
                 "Competing chain higher: moving down from #{} ({:?})",
                 competing_height,
                 competing_hash
@@ -349,12 +316,12 @@ where
 
             competing_hash = self.client.header(competing_hash)
                 .map_err(|e| {
-                    log::info!("Blockchain error when getting header for competing chain #{}: {:?}",
+                    log::error!("Blockchain error when getting header for competing chain #{}: {:?}",
                         competing_height, e);
                     sp_consensus::Error::Other(format!("Blockchain error: {:?}", e).into())
                 })?
                 .ok_or_else(|| {
-                    log::info!("Missing header for competing chain at #{} ({:?})",
+                    log::error!("Missing header for competing chain at #{} ({:?})",
                         competing_height, competing_hash);
                     sp_consensus::Error::Other("Missing header".into())
                 })?
@@ -362,25 +329,25 @@ where
 
             competing_height -= One::one();
 
-            log::info!(
+            log::debug!(
                 "Moved down competing chain to #{} ({:?})",
                 competing_height,
                 competing_hash
             );
         }
 
-        log::info!("Phase 3: Both chains now at height {} - finding fork point", current_height);
+        log::debug!("Phase 3: Both chains now at height {} - finding fork point", current_height);
 
         // Now both headers are at the same height
         // Find the fork-point by traversing backwards
         while current_best_hash != competing_hash {
             // If we reach genesis and still no match, no common ancestor
             if current_height.is_zero() {
-                log::info!("Reached genesis block without finding common ancestor");
+                log::error!("Reached genesis block without finding common ancestor");
                 return Err(sp_consensus::Error::Other("No common ancestor found".into()));
             }
 
-            log::info!(
+            log::debug!(
                 "Blocks at #{} differ: current ({:?}) vs competing ({:?})",
                 current_height,
                 current_best_hash,
@@ -390,11 +357,11 @@ where
             // Move down one block in the current best chain
             current_best_hash = self.client.header(current_best_hash)
                 .map_err(|e| {
-                    log::info!("Blockchain error when getting parent at #{}: {:?}", current_height, e);
+                    log::error!("Blockchain error when getting parent at #{}: {:?}", current_height, e);
                     sp_consensus::Error::Other(format!("Blockchain error: {:?}", e).into())
                 })?
                 .ok_or_else(|| {
-                    log::info!("Missing header for parent at #{} ({:?})", current_height, current_best_hash);
+                    log::error!("Missing header for parent at #{} ({:?})", current_height, current_best_hash);
                     sp_consensus::Error::Other("Missing header".into())
                 })?
                 .parent_hash().clone();
@@ -402,12 +369,12 @@ where
             // Move down one block in the competing chain
             competing_hash = self.client.header(competing_hash)
                 .map_err(|e| {
-                    log::info!("Blockchain error when getting parent for competing chain at #{}: {:?}",
+                    log::error!("Blockchain error when getting parent for competing chain at #{}: {:?}",
                         current_height, e);
                     sp_consensus::Error::Other(format!("Blockchain error: {:?}", e).into())
                 })?
                 .ok_or_else(|| {
-                    log::info!("Missing header for competing chain parent at #{} ({:?})",
+                    log::error!("Missing header for competing chain parent at #{} ({:?})",
                         current_height, competing_hash);
                     sp_consensus::Error::Other("Missing header".into())
                 })?
@@ -418,7 +385,7 @@ where
             // Each step backwards increases the reorganization depth
             reorg_depth += 1;
 
-            log::info!(
+            log::debug!(
                 "Moved both chains down to #{}, current ({:?}), competing ({:?}), reorg_depth: {}",
                 current_height,
                 current_best_hash,
@@ -428,7 +395,7 @@ where
         }
 
         // Log the fork point and reorg depth for debugging
-        log::info!(
+        log::warn!(
             "Fork-point ----------------------- found: {:?} at height: {:?} with reorg depth: {}",
             current_best_hash,
             current_height,
@@ -439,28 +406,28 @@ where
     }
 
     fn is_chain_ignored(&self, hash: &B::Hash) -> Result<bool, sp_consensus::Error> {
-        log::info!("Checking if chain with head {:?} is ignored", hash);
+        log::debug!("Checking if chain with head {:?} is ignored", hash);
 
         let key = ignored_chain_key(hash);
 
         match self.client.get_aux(&key) {
             Ok(Some(_)) => {
-                log::info!("Chain with head {:?} is ignored", hash);
+                log::debug!("Chain with head {:?} is ignored", hash);
                 Ok(true)
             },
             Ok(None) => {
-                log::info!("Chain with head {:?} is not ignored", hash);
+                log::debug!("Chain with head {:?} is not ignored", hash);
                 Ok(false)
             },
             Err(e) => {
-                log::info!("Failed to check if chain with head {:?} is ignored: {:?}", hash, e);
+                log::error!("Failed to check if chain with head {:?} is ignored: {:?}", hash, e);
                 Err(sp_consensus::Error::Other(format!("Failed to check ignored chain: {:?}", e).into()))
             },
         }
     }
 
     fn add_ignored_chain(&self, hash: B::Hash) -> Result<(), sp_consensus::Error> {
-        log::info!("Adding chain with head {:?} to ignored chains", hash);
+        log::debug!("Adding chain with head {:?} to ignored chains", hash);
 
         let key = ignored_chain_key(&hash);
 
@@ -470,7 +437,7 @@ where
 
         self.client.insert_aux(&[(key.as_slice(), empty_value.as_slice())], &[])
             .map_err(|e| {
-                log::info!("Failed to add chain with head {:?} to ignored chains: {:?}", hash, e);
+                log::error!("Failed to add chain with head {:?} to ignored chains: {:?}", hash, e);
                 sp_consensus::Error::Other(format!("Failed to add ignored chain: {:?}", e).into())
             })
     }
@@ -485,105 +452,105 @@ where
     BE: sc_client_api::Backend<B> + 'static,
 {
     async fn leaves(&self) -> Result<Vec<B::Hash>, sp_consensus::Error>{
-        log::info!("Getting blockchain leaves");
+        log::debug!("Getting blockchain leaves");
 
         let leaves = self.backend.blockchain().leaves().map_err(|e| {
-            log::info!("Failed to fetch leaves: {:?}", e);
+            log::error!("Failed to fetch leaves: {:?}", e);
             sp_consensus::Error::Other(format!("Failed to fetch leaves: {:?}", e).into())
         })?;
 
-        log::info!("Found {} leaves", leaves.len());
+        log::debug!("Found {} leaves", leaves.len());
 
         Ok(leaves)
     }
 
     async fn best_chain(&self) -> Result<B::Header, sp_consensus::Error> {
-        log::info!("------ Starting best chain selection process ------");
+        log::debug!("------ ☝️Starting best chain selection process ------");
 
         let leaves = self.backend.blockchain().leaves().map_err(|e| {
-            log::info!("Failed to fetch leaves: {:?}", e);
+            log::error!("☝️ Failed to fetch leaves: {:?}", e);
             sp_consensus::Error::Other(format!("Failed to fetch leaves: {:?}", e).into())
         })?;
 
-        log::info!("Found {} leaves to evaluate", leaves.len());
+        log::debug!("☝️ Found {} leaves to evaluate", leaves.len());
 
         if leaves.is_empty() {
-            log::info!("Blockchain has no leaves");
+            log::error!("☝️ Blockchain has no leaves");
             return Err(sp_consensus::Error::Other("Blockchain has no leaves".into()));
         }
 
         // Get info about last finalized block
         let finalized_number = self.client.info().finalized_number;
-        log::info!("Current finalized block: #{}", finalized_number);
+        log::debug!("☝️ Current finalized block: #{}", finalized_number);
 
         // the current head of the chain - will be needed to compare reorg depth
         let current_best = match self.client.info().best_hash {
             hash if hash != Default::default() => {
-                log::info!("Current best hash: {:?}", hash);
+                log::debug!("☝️ Current best hash: {:?}", hash);
 
                 self.client.header(hash)
                     .map_err(|e| {
-                        log::info!("Blockchain error when getting header for best hash: {:?}", e);
+                        log::error!("☝️ Blockchain error when getting header for best hash: {:?}", e);
                         sp_consensus::Error::Other(format!("Blockchain error: {:?}", e).into())
                     })?
                     .ok_or_else(|| {
-                        log::info!("Missing header for current best hash: {:?}", hash);
+                        log::error!("☝️ Missing header for current best hash: {:?}", hash);
                         sp_consensus::Error::Other("Missing current best header".into())
                     })?
             },
             _ => {
                 // If there's no current best, we don't need to find reorg depth
-                log::info!("No current best hash, finding best chain without reorg constraints");
+                log::debug!("☝️ No current best hash, finding best chain without reorg constraints");
                 return self.find_best_chain(leaves).await;
             }
         };
 
         let current_best_number = *current_best.number();
-        log::info!("Current best block: #{} ({:?})", current_best_number, current_best.hash());
+        log::debug!("☝️ Current best block: #{} ({:?})", current_best_number, current_best.hash());
 
         let mut best_header = current_best.clone();
         let mut best_work = self.calculate_chain_work(&current_best)?;
-        log::info!("Current best chain: {:?} with work: {:?}", best_header.hash(), best_work);
+        log::debug!("☝️ Current best chain: {:?} with work: {:?}", best_header.hash(), best_work);
 
-        log::info!("Evaluating {} leaves for potential best chain", leaves.len());
+        log::debug!("☝️ Evaluating {} leaves for potential best chain", leaves.len());
         for (idx, leaf_hash) in leaves.iter().enumerate() {
-            log::info!("Evaluating leaf [{}/{}]: {:?}", idx + 1, leaves.len(), leaf_hash);
+            log::debug!("☝️ Evaluating leaf [{}/{}]: {:?}", idx + 1, leaves.len(), leaf_hash);
 
             // Skip if it's the current best or already ignored
             if *leaf_hash == best_header.hash() {
-                log::info!("Skipping leaf {:?} - it's the current best", leaf_hash);
+                log::debug!("☝️ Skipping leaf {:?} - it's the current best", leaf_hash);
                 continue;
             }
 
             if self.is_chain_ignored(leaf_hash)? {
-                log::info!("Skipping leaf {:?} - it's in the ignored list", leaf_hash);
+                log::debug!("☝️ Skipping leaf {:?} - it's in the ignored list", leaf_hash);
                 continue;
             }
 
             let header = self.client.header(*leaf_hash)
                 .map_err(|e| {
-                    log::info!("Blockchain error when getting header for leaf: {:?}", e);
+                    log::error!("☝️ Blockchain error when getting header for leaf: {:?}", e);
                     sp_consensus::Error::Other(format!("Blockchain error: {:?}", e).into())
                 })?
                 .ok_or_else(|| {
-                    log::info!("Missing header for leaf hash: {:?}", leaf_hash);
+                    log::error!("☝️ Missing header for leaf hash: {:?}", leaf_hash);
                     sp_consensus::Error::Other(format!("Missing header for {:?}", leaf_hash).into())
                 })?;
 
             let header_number = *header.number();
-            log::info!("Found header for leaf at height #{}", header_number);
+            log::debug!("☝️ Found header for leaf at height #{}", header_number);
 
             let chain_work = self.calculate_chain_work(&header)?;
-            log::info!("Chain work for leaf #{}: {}", header_number, chain_work);
+            log::debug!("☝️ Chain work for leaf #{}: {}", header_number, chain_work);
 
             let max_reorg_depth = self.client.runtime_api().get_max_reorg_depth(best_header.hash())
                 .expect("Failed to get max reorg depth");
-            log::info!("Max reorg depth from runtime: {}", max_reorg_depth);
+            log::debug!("☝️ Max reorg depth from runtime: {}", max_reorg_depth);
 
             if chain_work >= best_work {
                 // This chain has more work, but we need to check reorg depth
-                log::info!(
-                    "Chain with head #{} ({:?}) has at least as much work ({}) as current best ({}), checking reorg depth",
+                log::debug!(
+                    "☝️ Chain with head #{} ({:?}) has at least as much work ({}) as current best ({}), checking reorg depth",
                     header_number,
                     leaf_hash,
                     chain_work,
@@ -591,16 +558,16 @@ where
                 );
 
                 let (fork_point, reorg_depth) = self.find_common_ancestor_and_depth(&current_best, &header)?;
-                log::info!(
-                    "Found common ancestor with hash {:?} with reorg depth: {}",
+                log::debug!(
+                    "☝️ Found common ancestor with hash {:?} with reorg depth: {}",
                     fork_point,
                     reorg_depth
                 );
 
                 if reorg_depth <= max_reorg_depth {
                     // Switch to this chain as it's within the reorg limit
-                    log::info!(
-                        "Found better chain: {:?} with work: {:?}, reorg depth: {} (within limit of {})",
+                    log::debug!(
+                        "☝️ Found better chain: {:?} with work: {:?}, reorg depth: {} (within limit of {})",
                         header.hash(),
                         chain_work,
                         reorg_depth,
@@ -612,30 +579,30 @@ where
                         let current_block_height = best_header.number();
                         let new_block_height = header.number();
 
-                        log::info!(
-                            "Chain work is equal, comparing block heights: current #{}, new #{}",
+                        log::debug!(
+                            "☝️ Chain work is equal, comparing block heights: current #{}, new #{}",
                             current_block_height,
                             new_block_height
                         );
 
                         // select the chain with more blocks when chains have equal work
                         if new_block_height > current_block_height {
-                            log::info!(
-                                "Switching to chain with more blocks: #{} > #{}",
+                            log::debug!(
+                                "☝️ Switching to chain with more blocks: #{} > #{}",
                                 new_block_height,
                                 current_block_height
                             );
                             best_header = header;
                         } else {
-                            log::info!(
-                                "Keeping current chain as it has at least as many blocks: #{} >= #{}",
+                            log::debug!(
+                                "☝️ Keeping current chain as it has at least as many blocks: #{} >= #{}",
                                 current_block_height,
                                 new_block_height
                             );
                         }
                     } else {
-                        log::info!(
-                            "Switching to chain with more work: {} > {}",
+                        log::debug!(
+                            "☝️ Switching to chain with more work: {} > {}",
                             chain_work,
                             best_work
                         );
@@ -643,15 +610,15 @@ where
                         best_header = header;
                     }
                 } else {
-                    log::info!(
-                        "Chain with more work exceeds reorg limit: {} > {}. Adding to ignored chains.",
+                    log::debug!(
+                        "☝️ Chain with more work exceeds reorg limit: {} > {}. Adding to ignored chains.",
                         reorg_depth,
                         max_reorg_depth
                     );
 
                     self.add_ignored_chain(*leaf_hash)?;
                     log::warn!(
-                        "Permanently ignoring chain with more work: {:?} (work: {:?}) due to excessive reorg depth: {} > {}",
+                        "☝️ Permanently ignoring chain with more work: {:?} (work: {:?}) due to excessive reorg depth: {} > {}",
                         header.hash(),
                         chain_work,
                         reorg_depth,
@@ -660,37 +627,37 @@ where
                 }
             } else {
                 // This chain has less work - check if it should be ignored
-                log::info!(
-                    "Chain has less work ({} < {}), checking if it should be ignored",
+                log::debug!(
+                    "☝️ Chain has less work ({} < {}), checking if it should be ignored",
                     chain_work,
                     best_work
                 );
 
                 let (fork_point, reorg_depth) = self.find_common_ancestor_and_depth(&current_best, &header)?;
-                log::info!(
-                    "Found common ancestor with hash {:?} with reorg depth: {}",
+                log::debug!(
+                    "☝️ Found common ancestor with hash {:?} with reorg depth: {}",
                     fork_point,
                     reorg_depth
                 );
 
                 if reorg_depth > max_reorg_depth {
-                    log::info!(
-                        "Chain exceeds reorg limit: {} > {}. Adding to ignored chains.",
+                    log::debug!(
+                        "☝️ Chain exceeds reorg limit: {} > {}. Adding to ignored chains.",
                         reorg_depth,
                         max_reorg_depth
                     );
 
                     self.add_ignored_chain(*leaf_hash)?;
-                    log::warn!(
-                        "Permanently ignoring chain with less work: {:?} (work: {:?}) due to excessive reorg depth: {} > {}",
+                    log::debug!(
+                        "☝️ Permanently ignoring chain with less work: {:?} (work: {:?}) due to excessive reorg depth: {} > {}",
                         leaf_hash,
                         chain_work,
                         reorg_depth,
                         max_reorg_depth
                     );
                 } else {
-                    log::info!(
-                        "Chain has less work but is within reorg limit: {} <= {}. Keeping in consideration.",
+                    log::debug!(
+                        "☝️ Chain has less work but is within reorg limit: {} <= {}. Keeping in consideration.",
                         reorg_depth,
                         max_reorg_depth
                     );
@@ -699,7 +666,7 @@ where
         }
 
         log::info!(
-            "Finished chain selection. Selected best chain with head: #{} ({:?}) and work: {}",
+            "☝️ Finished chain selection. Selected best chain with head: #{} ({:?}) and work: {}",
             best_header.number(),
             best_header.hash(),
             best_work
@@ -726,7 +693,7 @@ impl ChainManagement {
         C::Api: QPoWApi<B>,
         BE: sc_client_api::Backend<B> + 'static,
     {
-        log::info!("Spawning chain finalization task");
+        log::info!("⛓️ Spawning chain finalization task");
 
         task_manager.spawn_essential_handle().spawn(
             "chain_finalization",
@@ -735,14 +702,14 @@ impl ChainManagement {
                 log::info!("⛓️ Chain finalization task spawned");
 
                 let mut import_notification_stream = select_chain.client.import_notification_stream();
-                log::info!("Listening for block import notifications");
+                log::debug!("⛓️ Listening for block import notifications");
 
                 while let Some(notification) = import_notification_stream.next().await {
 
                     if let Err(e) = select_chain.finalize_canonical_at_depth() {
-                        log::info!("Failed to finalize blocks: {:?}", e);
+                        log::error!("⛓️ Failed to finalize blocks: {:?}", e);
                     } else {
-                        log::info!("Successfully processed finalization after import of block #{}",
+                        log::debug!("⛓️ Successfully processed finalization after import of block #{}",
                             notification.header.number());
                     }
                 }

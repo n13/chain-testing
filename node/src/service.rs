@@ -450,8 +450,6 @@ pub fn new_full<
                             }
                         };
 
-                        log::info!("block found");
-
                         let current_version = worker_handle.version();
                         if current_version == version {
                             if futures::executor::block_on(worker_handle.submit(seal.encode())) {
