@@ -12,14 +12,14 @@ pub(crate) async fn submit_mining_job(
     miner_url: &str,
     job_id: &str,
     mining_hash: &H256,
-    difficulty: u64,
+    distance_threshold: U512,
     nonce_start: U512,
     nonce_end: U512,
 ) -> Result<(), String> {
     let request = MiningRequest {
         job_id: job_id.to_string(),
         mining_hash: hex::encode(mining_hash.as_bytes()),
-        difficulty: difficulty.to_string(),
+        distance_threshold: distance_threshold.to_string(),
         nonce_start: format!("{:0128x}", nonce_start),
         nonce_end: format!("{:0128x}", nonce_end),
     };

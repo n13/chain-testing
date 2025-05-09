@@ -97,7 +97,7 @@ impl frame_system::Config for Runtime {
     type AccountData = pallet_balances::AccountData<Balance>;
     /// This is used as an identifier of the chain. 42 is the generic substrate prefix.
     type SS58Prefix = SS58Prefix;
-    type MaxConsumers = frame_support::traits::ConstU32<16>;
+    type MaxConsumers = ConstU32<16>;
 }
 
 parameter_types! {
@@ -121,15 +121,15 @@ impl pallet_mining_rewards::Config for Runtime {
 }
 
 impl pallet_qpow::Config for Runtime {
-    type RuntimeEvent = RuntimeEvent;
-    type WeightInfo = pallet_qpow::DefaultWeightInfo;
-    type InitialDifficulty = ConstU64<5500000000>; //Min + 5
-    type MinDifficulty = ConstU64<50000000000>;
-    type TargetBlockTime = ConstU64<1000>;
-    type AdjustmentPeriod = ConstU32<10>;
-    type DampeningFactor = ConstU64<8>;
-    type BlockTimeHistorySize = ConstU32<60>;
-    type MaxReorgDepth = ConstU32<10>;
+	type RuntimeEvent = RuntimeEvent;
+	type WeightInfo = pallet_qpow::DefaultWeightInfo;
+	// NOTE: InitialDistance will be shifted left by this amount: higher is easier
+    type InitialDistanceThresholdExponent = ConstU32<502>;
+    type DifficultyAdjustPercentClamp = ConstU8<10>;
+	type TargetBlockTime = ConstU64<10000>;
+	type AdjustmentPeriod = ConstU32<1>;
+	type BlockTimeHistorySize = ConstU32<10>;
+	type MaxReorgDepth = ConstU32<10>;
 }
 
 impl pallet_wormhole::Config for Runtime {
