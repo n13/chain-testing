@@ -21,7 +21,7 @@ async fn test_mine_endpoint() {
     let valid_request = MiningRequest {
         job_id: "test".to_string(),
         mining_hash: "a".repeat(64),
-        difficulty: "1000".to_string(),
+        distance_threshold: "1000".to_string(),
         nonce_start: "0".repeat(128),
         nonce_end: "1".repeat(128),
     };
@@ -56,7 +56,7 @@ async fn test_mine_endpoint() {
     let invalid_request = MiningRequest {
         job_id: "".to_string(), // Empty job ID
         mining_hash: "a".repeat(64),
-        difficulty: "1000".to_string(),
+        distance_threshold: "1000".to_string(),
         nonce_start: "0".repeat(128),
         nonce_end: "1".repeat(128),
     };

@@ -160,18 +160,18 @@ pub fn validate_mining_request(request: &MiningRequest) -> Result<(), String> {
     if request.mining_hash.len() != 64 || hex::decode(&request.mining_hash).is_err() {
         return Err("Invalid mining_hash (must be 64 hex characters)".to_string());
     }
-    if request.difficulty.parse::<u64>().is_err() {
-        return Err("Invalid difficulty (must be a valid u64)".to_string());
+    if U512::from_dec_str(&request.distance_threshold).is_err() {
+        return Err("Invalid distance_threshold (must be a valid U512)".to_string());
     }
     if request.nonce_start.len() != 128 || U512::from_str_radix(&request.nonce_start, 16).is_err() {
         return Err("Invalid nonce_start (must be 128 hex characters)".to_string());
     }
     if request.nonce_end.len() != 128 || U512::from_str_radix(&request.nonce_end, 16).is_err() {
-         return Err("Invalid nonce_end (must be 128 hex characters)".to_string());
+        return Err("Invalid nonce_end (must be 128 hex characters)".to_string());
     }
-     if U512::from_str_radix(&request.nonce_start, 16).unwrap() > U512::from_str_radix(&request.nonce_end, 16).unwrap() {
-         return Err("nonce_start cannot be greater than nonce_end".to_string());
-     }
+    if U512::from_str_radix(&request.nonce_start, 16).unwrap() > U512::from_str_radix(&request.nonce_end, 16).unwrap() {
+        return Err("nonce_start cannot be greater than nonce_end".to_string());
+    }
     Ok(())
 }
 
@@ -181,9 +181,9 @@ pub async fn handle_mine_request(
     request: MiningRequest,
     state: MiningState,
 ) -> Result<impl Reply, Rejection> {
-     log::debug!("Received mine request: {:?}", request);
+    log::debug!("Received mine request: {:?}", request);
     if let Err(e) = validate_mining_request(&request) {
-         log::warn!("Invalid mine request ({}): {}", request.job_id, e);
+        log::warn!("Invalid mine request ({}): {}", request.job_id, e);
         return Ok(warp::reply::with_status(
             warp::reply::json(&MiningResponse {
                 status: ApiResponseStatus::Error,
@@ -199,20 +199,20 @@ pub async fn handle_mine_request(
         .unwrap()
         .try_into()
         .expect("Validated hex string is 32 bytes");
-    let difficulty = request.difficulty.parse().unwrap();
+    let distance_threshold = U512::from_dec_str(&request.distance_threshold).unwrap();
     let nonce_start = U512::from_str_radix(&request.nonce_start, 16).unwrap();
     let nonce_end = U512::from_str_radix(&request.nonce_end, 16).unwrap();
 
     let job = MiningJob::new(
         header_hash,
-        difficulty,
+        distance_threshold,
         nonce_start,
         nonce_end,
     );
 
     match state.add_job(request.job_id.clone(), job).await {
         Ok(_) => {
-             log::info!("Accepted mine request for job ID: {}", request.job_id);
+            log::info!("Accepted mine request for job ID: {}", request.job_id);
             Ok(warp::reply::with_status(
                 warp::reply::json(&MiningResponse {
                     status: ApiResponseStatus::Accepted,
@@ -223,7 +223,7 @@ pub async fn handle_mine_request(
             ))
         }
         Err(e) => {
-             log::error!("Failed to add job {}: {}", request.job_id, e);
+            log::error!("Failed to add job {}: {}", request.job_id, e);
             Ok(warp::reply::with_status(
                 warp::reply::json(&MiningResponse {
                     status: ApiResponseStatus::Error,
@@ -323,12 +323,11 @@ mod tests {
     // --- Keep existing tests ---
     #[test]
     fn test_validate_mining_request() {
-        // (Keep the body of this test as it was)
         // Test valid request
         let valid_request = MiningRequest {
             job_id: "test_valid".to_string(),
             mining_hash: "a".repeat(64),
-            difficulty: "1000".to_string(),
+            distance_threshold: "1000".to_string(),
             nonce_start: "0".repeat(128),
             nonce_end: "f".repeat(128),
         };
@@ -348,9 +347,9 @@ mod tests {
         assert!(validate_mining_request(&invalid_request_hash_hex).is_err());
 
 
-        // Test invalid difficulty
+        // Test invalid distance_threshold
         let invalid_request_diff = MiningRequest {
-             difficulty: "not_a_number".to_string(), ..valid_request.clone() };
+            distance_threshold: "not_a_number".to_string(), ..valid_request.clone() };
         assert!(validate_mining_request(&invalid_request_diff).is_err());
 
         // Test invalid nonce length
@@ -377,8 +376,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mining_state() {
-        // (Keep the body of this test as it was)
-         let state = MiningState::new();
+        let state = MiningState::new();
         let job = MiningJob {
             header_hash: [0; 32],
             distance_threshold: U512::from(1000),
@@ -411,8 +409,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_concurrent_state_access() {
-        // (Keep the body of this test as it was)
-         let state = MiningState::new();
+        let state = MiningState::new();
         let mut handles = vec![];
 
         // Spawn multiple tasks to add jobs concurrently
@@ -447,8 +444,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_job_status_transitions() {
-        // (Keep the body of this test as it was)
-         let state = MiningState::new();
+        let state = MiningState::new();
         let job = MiningJob {
             header_hash: [0; 32],
             distance_threshold: U512::from(1000),
