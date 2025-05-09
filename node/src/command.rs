@@ -17,7 +17,7 @@ use crate::cli::{ResonanceAddressType, ResonanceKeySubcommand};
 
 impl SubstrateCli for Cli {
 	fn impl_name() -> String {
-		"Resonance Node".into()
+		"Quantus Node".into()
 	}
 
 	fn impl_version() -> String {
@@ -43,8 +43,8 @@ impl SubstrateCli for Cli {
 	fn load_spec(&self, id: &str) -> Result<Box<dyn sc_service::ChainSpec>, String> {
 		Ok(match id {
 			"dev" => Box::new(chain_spec::development_chain_spec()?),
-			"live_testnet_local" => Box::new(chain_spec::live_testnet_chain_spec()?),
-			"live_testnet" => Box::new(chain_spec::ChainSpec::from_json_bytes(include_bytes!("chain-specs/live-testnet.json"))?),
+			"live_resonance_local" => Box::new(chain_spec::live_testnet_chain_spec()?),
+			"live_resonance" => Box::new(chain_spec::ChainSpec::from_json_bytes(include_bytes!("chain-specs/live-resonance.json"))?),
 			"" | "local" => Box::new(chain_spec::local_chain_spec()?),
 			path =>
 				Box::new(chain_spec::ChainSpec::from_json_file(std::path::PathBuf::from(path))?),
@@ -65,7 +65,7 @@ pub fn run() -> sc_cli::Result<()> {
 
 			match scheme {
 				Some(ResonanceAddressType::Standard) => {
-					println!("Generating resonance address...");
+					println!("Generating quantus address...");
 
 					let seed = match seed {
 						Some(seed_str) => {
@@ -111,7 +111,7 @@ pub fn run() -> sc_cli::Result<()> {
 					let resonance_pair = ResonancePair::from_seed(&seed).unwrap();
 					let account_id = AccountId32::from(resonance_pair.public());
 
-					println!("XXXXXXXXXXXXXXX Resonance Account Details XXXXXXXXXXXXXXXXX");
+					println!("XXXXXXXXXXXXXXX Quantus Account Details XXXXXXXXXXXXXXXXX");
 					println!("Address: 0x{}", hex::encode(account_id));
 					println!("Seed: {}", hex::encode(seed));
 					println!("Pub key: 0x{}", hex::encode(resonance_pair.public()));
