@@ -217,7 +217,11 @@ jobs:
           (cd staging && tar -czvf "../${asset_name}" ${NODE_BINARY_NAME})
           
           # Generate checksum for the tarball
-          sha256sum "${asset_name}" > "${checksum_file_name}"
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            shasum -a 256 "${asset_name}" > "${checksum_file_name}"
+          else
+            sha256sum "${asset_name}" > "${checksum_file_name}"
+          fi
           
           echo "Created asset: ${asset_name}"
           echo "Created checksum file: ${checksum_file_name}"
