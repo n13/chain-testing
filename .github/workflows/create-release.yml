@@ -216,7 +216,7 @@ jobs:
 
 
       - name: Upload Release Assets as Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: release-assets-${{ matrix.target }}
           path: | # Paths are relative to GITHUB_WORKSPACE
@@ -235,10 +235,10 @@ jobs:
           ref: ${{ github.ref }} # Checkout the branch the workflow was run on
 
       - name: Download all release assets
-        uses: actions/download-artifact@v3
-        # No \'name\' specified, downloads all artifacts from previous jobs in this workflow run
-        # This will create directories like \'release-assets-linux-amd64/\'
-        # We\'ll need to find the files within these directories.
+        uses: actions/download-artifact@v4
+        # No 'name' specified, downloads all artifacts from previous jobs in this workflow run
+        # This will create directories like 'release-assets-linux-amd64/'
+        # We'll need to find the files within these directories.
 
       - name: List downloaded artifacts (for debugging)
         run: |
