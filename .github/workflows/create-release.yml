@@ -263,11 +263,15 @@ jobs:
 
       - name: Generate asset list file
         run: |
+          echo "--- Directory structure of downloaded-artifacts ---"
           ls -R downloaded-artifacts
-          # Find all asset files from all downloaded artifact directories
+          echo "--- Finding asset files ---"
           bash -c 'find downloaded-artifacts -type f \( -name "*.tar.gz" -o -name "*.txt" \) -print0' > asset_files.txt
-          echo "Collected asset files:"
+          echo "--- Raw content of asset_files.txt (null characters will not be visible) ---"
+          cat asset_files.txt 
+          echo "--- Processed content of asset_files.txt (one file per line) ---"
           cat asset_files.txt | xargs -0 -n1
+          echo "--- End of Generate asset list file step ---"
 
       - name: Create Git Tag
         env:
@@ -288,34 +292,32 @@ jobs:
           IS_PRERELEASE: ${{ github.event.inputs.is_prerelease }}
           DRAFT_RELEASE: ${{ github.event.inputs.draft_release }}
         run: |
+          set -x # Echo all commands
+
           release_notes=$(printf "Automated release for version %s.\\nBuilt from branch: \`%s\`\\nCommit: \`%s\`" "$NEW_VERSION" "$BRANCH_NAME" "$COMMIT_SHA_SHORT")
           # You can expand release_notes generation here, e.g., from CHANGELOG or commit messages
-          # For example, to add checksums (first read them from the files):
-          # notes_checksum_info="\\n\\n**Checksums:**\\n"
-          # for checksum_file in release-assets-*/sha256sums-*.txt; do
-          #   if [[ -f "$checksum_file" ]]; then
-          #     notes_checksum_info+=$(printf "\\n\`%s\`:\\n\`\`\`\\n%s\`\`\`\\n" "$(basename "$checksum_file")" "$(cat "$checksum_file")")
-          #   fi
-          # done
-          # release_notes+="$notes_checksum_info"
 
           # Collect asset files for the gh release create command
           # The find command above created asset_files.txt
           # We need to pass them as separate arguments to gh release create
           asset_args=()
-          while IFS= read -r -d $\'\\0\' file; do
+          while IFS= read -r -d $'\\0' file; do
             asset_args+=("$file")
           done < asset_files.txt
-          
+
           echo "Files to attach: ${asset_args[@]}"
+          echo "Verifying existence and permissions of files to attach:"
+          for asset_file in "${asset_args[@]}"; do
+            ls -l "$asset_file"
+          done
 
           # Use the commit the workflow ran on as the target for the release
           # Attach all collected asset files
-          gh release create "$NEW_VERSION" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Release $NEW_VERSION" \
-            --notes "$release_notes" \
-            --target "$GITHUB_SHA" \
-            $( [[ "$IS_PRERELEASE" == "true" ]] && echo "--prerelease" ) \
-            $( [[ "$DRAFT_RELEASE" == "true" ]] && echo "--draft" ) \
+          gh release create "$NEW_VERSION" \\
+            --repo "$GITHUB_REPOSITORY" \\
+            --title "Release $NEW_VERSION" \\
+            --notes "$release_notes" \\
+            --target "$GITHUB_SHA" \\
+            $( [[ "$IS_PRERELEASE" == "true" ]] && echo "--prerelease" ) \\
+            $( [[ "$DRAFT_RELEASE" == "true" ]] && echo "--draft" ) \\
             "${asset_args[@]}" 
