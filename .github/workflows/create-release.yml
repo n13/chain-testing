@@ -172,7 +172,6 @@ jobs:
           toolchain: nightly-2024-12-24
           components: rustfmt, clippy, rust-src
           targets: wasm32-unknown-unknown
-          override: true
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
@@ -186,7 +185,7 @@ jobs:
         id: prepare_assets
         env:
           NEW_VERSION: ${{ needs.calculate_next_version.outputs.new_version }}
-          TARGET_ARCH: ${{ matrix.target }} # This will now be x86_64-unknown-linux-gnu
+          TARGET_ARCH: ${{ matrix.target }}
         run: |
           # Determine asset names based on version and target
           NODE_BINARY_NAME="quantus-node" # From previous discussion
@@ -284,7 +283,8 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "Release $NEW_VERSION" \
             --notes "$release_notes" \
-            --target "$GITHUB_SHA" \ # Use the commit the workflow ran on
+            # Use the commit the workflow ran on
+            --target "$GITHUB_SHA" \
             $( [[ "$IS_PRERELEASE" == "true" ]] && echo "--prerelease" ) \
             $( [[ "$DRAFT_RELEASE" == "true" ]] && echo "--draft" ) \
             "${asset_args[@]}" # Attach all collected asset files 
