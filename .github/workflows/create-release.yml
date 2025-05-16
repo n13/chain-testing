@@ -255,27 +255,19 @@ jobs:
 
       - name: Download all release assets
         uses: actions/download-artifact@v4
+        with:
+          path: downloaded-artifacts # All artifacts extracted here, each in its own subdir
         # No 'name' specified, downloads all artifacts from previous jobs in this workflow run
-        # This will create directories like 'release-assets-linux-amd64/'
+        # This will create directories like 'downloaded-artifacts/release-assets-x86_64-unknown-linux-gnu/'
         # We'll need to find the files within these directories.
 
       - name: Generate asset list file
         run: |
-          echo "Current directory listing (before find):"
-          ls -R . # Show everything in GITHUB_WORKSPACE
-          echo "Specific listing of release-assets-* directories:"
-          ls -R release-assets-* || echo "No release-assets-* directories found or they are empty."
-          
+          ls -R downloaded-artifacts
           # Find all asset files from all downloaded artifact directories
-          bash -c 'find release-assets-* -type f \( -name "*.tar.gz" -o -name "*.txt" -o -name "*.zip" \) -print0' > asset_files.txt
-          
-          echo "Contents of asset_files.txt:"
-          cat asset_files.txt | xargs -0 -n1 printf "'%s'\\n" || echo "asset_files.txt is empty."
-          
-          # This part is already in your "Create GitHub Release" step but useful to mentally link
-          # asset_args=()
-          # while IFS= read -r -d $\'\\0\' file; do asset_args+=("$file"); done < asset_files.txt
-          # echo "Files that would be attached (from asset_args): ${asset_args[@]}"
+          bash -c 'find downloaded-artifacts -type f \( -name "*.tar.gz" -o -name "*.txt" \) -print0' > asset_files.txt
+          echo "Collected asset files:"
+          cat asset_files.txt | xargs -0 -n1
 
       - name: Create Git Tag
         env:
