@@ -286,10 +286,16 @@ jobs:
           IS_PRERELEASE: ${{ github.event.inputs.is_prerelease }}
           DRAFT_RELEASE: ${{ github.event.inputs.draft_release }}
         run: |
-          release_notes="Automated release for version ${NEW_VERSION}."
-          release_notes+="\nBuilt from branch: \`${BRANCH_NAME}\`"
-          release_notes+="\nCommit: \`${COMMIT_SHA_SHORT}\`"
+          release_notes=$(printf "Automated release for version %s.\\nBuilt from branch: \`%s\`\\nCommit: \`%s\`" "$NEW_VERSION" "$BRANCH_NAME" "$COMMIT_SHA_SHORT")
           # You can expand release_notes generation here, e.g., from CHANGELOG or commit messages
+          # For example, to add checksums (first read them from the files):
+          # notes_checksum_info="\\n\\n**Checksums:**\\n"
+          # for checksum_file in release-assets-*/sha256sums-*.txt; do
+          #   if [[ -f "$checksum_file" ]]; then
+          #     notes_checksum_info+=$(printf "\\n\`%s\`:\\n\`\`\`\\n%s\`\`\`\\n" "$(basename "$checksum_file")" "$(cat "$checksum_file")")
+          #   fi
+          # done
+          # release_notes+="$notes_checksum_info"
 
           # Collect asset files for the gh release create command
           # The find command above created asset_files.txt
