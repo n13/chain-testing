@@ -3,7 +3,6 @@ name: Create Release
 env:
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
-  RUSTUP_TOOLCHAIN: nightly-2024-12-14
 
 on:
   workflow_dispatch:
@@ -170,9 +169,11 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-
-      - name: pin
-        run: rustup override set ${RUSTUP_TOOLCHAIN}
+        with:
+          toolchain: nightly-2024-12-24
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+          override: true
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
