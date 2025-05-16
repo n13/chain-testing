@@ -70,7 +70,7 @@ jobs:
           # It handles pre-0.x.y, 0.x.y, and X.Y.Z versions.
           # It also handles pre-releases correctly.
           # If no tags found, defaults to v0.0.0 so bumping works for the first tag.
-          latest_semver_tag=$(git tag --list 'v*' --sort=-v:refname | \\
+          latest_semver_tag=$(git tag --list 'v*' --sort=-v:refname |
             awk 'BEGIN{FS="[.-]";OFS="."} \
             /^v[0-9]+\\.[0-9]+\\.[0-9]+(-[a-zA-Z0-9]+(\\.[0-9]+)?)?$/ { \
               gsub(/^v/,"",$1); \
@@ -80,7 +80,8 @@ jobs:
               current_val = major * 1000000 + minor * 10000 + patch * 100; \
               if (pre_id != "") current_val -= (100 - (length(pre_id)*10 + pre_num)); # Heuristic to sort pre-releases lower
               if (current_val > max_val) { max_val = current_val; best_tag = $0; } \
-            } END { if (best_tag) print "v"best_tag; else print "v0.0.0"; }' )
+            } END { if (best_tag) print "v"best_tag; else print "v0.0.0"; }'
+          )
           echo "latest_tag_found=$latest_semver_tag" >> $GITHUB_OUTPUT
           echo "Latest semantic version tag found: $latest_semver_tag"
 
@@ -255,7 +256,7 @@ jobs:
         run: |
           ls -R
           # Find all asset files from the downloaded artifacts
-          bash -c 'find . -type f \( -name "*.tar.gz" -o -name "*.txt" \) -print0' > asset_files.txt
+          bash -c 'find release-assets-x86_64-unknown-linux-gnu -type f \( -name "*.tar.gz" -o -name "*.txt" \) -print0' > asset_files.txt
           echo "Collected asset files:"
           cat asset_files.txt | xargs -0 -n1
 
@@ -307,6 +308,6 @@ jobs:
         run: |
           ls -R
           # Find all asset files from the downloaded artifacts
-          bash -c 'find . -type f \( -name "*.tar.gz" -o -name "*.txt" \) -print0' > asset_files.txt
+          bash -c 'find release-assets-x86_64-unknown-linux-gnu -type f \( -name "*.tar.gz" -o -name "*.txt" \) -print0' > asset_files.txt
           echo "Collected asset files:"
           cat asset_files.txt | xargs -0 -n1 
