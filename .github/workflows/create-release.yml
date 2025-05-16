@@ -239,11 +239,11 @@ jobs:
         # This will create directories like 'release-assets-linux-amd64/'
         # We'll need to find the files within these directories.
 
-      - name: List downloaded artifacts (for debugging)
+      - name: Generate asset list file
         run: |
           ls -R
           # Find all asset files from the downloaded artifacts
-          find . -type f \\( -name "*.tar.gz" -o -name "*.txt" \\) -print0 > asset_files.txt
+          bash -c 'find . -type f \( -name "*.tar.gz" -o -name "*.txt" \) -print0' > asset_files.txt
           echo "Collected asset files:"
           cat asset_files.txt | xargs -0 -n1
 
@@ -289,3 +289,11 @@ jobs:
             $( [[ "$IS_PRERELEASE" == "true" ]] && echo "--prerelease" ) \
             $( [[ "$DRAFT_RELEASE" == "true" ]] && echo "--draft" ) \
             "${asset_args[@]}" # Attach all collected asset files 
+
+      - name: Generate asset list file
+        run: |
+          ls -R
+          # Find all asset files from the downloaded artifacts
+          bash -c 'find . -type f \( -name "*.tar.gz" -o -name "*.txt" \) -print0' > asset_files.txt
+          echo "Collected asset files:"
+          cat asset_files.txt | xargs -0 -n1 
