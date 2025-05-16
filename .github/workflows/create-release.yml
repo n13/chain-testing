@@ -33,6 +33,11 @@ on:
         required: true
         type: boolean
         default: true # Safer to start as draft
+      fast_test_create_release_job:
+        description: 'If true, skips actual build and uses dummy artifacts to test release creation steps.'
+        required: false
+        type: boolean
+        default: false
       # Add an input for release notes if you want to paste them in manually
       # release_notes:
       #   description: 'Release notes content (Markdown)'
@@ -178,8 +183,17 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Build quantus-node binary
+      - name: Build quantus-node binary (if not fast testing)
+        if: github.event.inputs.fast_test_create_release_job == 'false'
         run: cargo build --locked --release --package quantus-node
+
+      - name: Create dummy quantus-node binary (for fast test)
+        if: github.event.inputs.fast_test_create_release_job == 'true'
+        run: |
+          mkdir -p target/release
+          echo "This is a dummy quantus-node for fast testing. Actual build skipped." > target/release/quantus-node
+          chmod +x target/release/quantus-node
+          echo "Dummy quantus-node created at target/release/quantus-node
 
       - name: Prepare Release Assets
         id: prepare_assets
