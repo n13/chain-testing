@@ -193,7 +193,7 @@ jobs:
           mkdir -p target/release
           echo "This is a dummy quantus-node for fast testing. Actual build skipped." > target/release/quantus-node
           chmod +x target/release/quantus-node
-          echo "Dummy quantus-node created at target/release/quantus-node
+          echo "Dummy quantus-node created at target/release/quantus-node"
 
       - name: Prepare Release Assets
         id: prepare_assets
