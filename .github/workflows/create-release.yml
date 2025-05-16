@@ -167,6 +167,7 @@ jobs:
           toolchain: nightly-2024-12-24
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
+          override: true
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
