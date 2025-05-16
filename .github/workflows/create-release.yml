@@ -162,33 +162,20 @@ jobs:
         # No need to specify ref, it defaults to the commit that triggered the workflow
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@nightly-2024-12-14
         with:
           components: rustfmt, clippy
-          # 'override: true' is not a parameter for dtolnay/rust-toolchain
-          # 'target' will be handled by cross or cargo build if needed, or can be added here if a specific default is required.
 
       - name: Cache Cargo dependencies
-        uses: actions/cache@v3
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Build resonance-node binary with cross
-        uses: houseabsolute/actions-rust-cross@v1
-        with:
-          target: ${{ matrix.target }} # This will now be x86_64-unknown-linux-gnu
-          command: 'build'
-          args: '--release --package quantus-node'
-          # Optional: specify cross version if needed, defaults to latest stable release of cross
-          # cross-version: 'latest' 
-          # Optional: specify Rust toolchain if different from default or what dtolnay/rust-toolchain sets up
-          # toolchain: 'stable'
+      - name: Build resonance-node binary
+        run: cargo build --locked --release --package quantus-node
+        env:
+          CARGO_INCREMENTAL: 0
+          CARGO_TERM_COLOR: always
 
       - name: Prepare Release Assets
         id: prepare_assets
