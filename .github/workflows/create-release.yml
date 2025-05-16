@@ -164,7 +164,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        # No need to specify ref, it defaults to the commit that triggered the workflow
+
+      - name: Install protoc (protobuf-compiler)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
       - name: pin
         run: rustup override set ${RUSTUP_TOOLCHAIN}
@@ -174,11 +179,8 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Build resonance-node binary
+      - name: Build quantus-node binary
         run: cargo build --locked --release --package quantus-node
-        env:
-          CARGO_INCREMENTAL: 0
-          CARGO_TERM_COLOR: always
 
       - name: Prepare Release Assets
         id: prepare_assets
