@@ -261,11 +261,21 @@ jobs:
 
       - name: Generate asset list file
         run: |
-          ls -R
+          echo "Current directory listing (before find):"
+          ls -R . # Show everything in GITHUB_WORKSPACE
+          echo "Specific listing of release-assets-* directories:"
+          ls -R release-assets-* || echo "No release-assets-* directories found or they are empty."
+          
           # Find all asset files from all downloaded artifact directories
-          bash -c 'find release-assets-* -type f \( -name "*.tar.gz" -o -name "*.txt" \) -print0' > asset_files.txt
-          echo "Collected asset files:"
-          cat asset_files.txt | xargs -0 -n1
+          bash -c 'find release-assets-* -type f \( -name "*.tar.gz" -o -name "*.txt" -o -name "*.zip" \) -print0' > asset_files.txt
+          
+          echo "Contents of asset_files.txt:"
+          cat asset_files.txt | xargs -0 -n1 printf "'%s'\\n" || echo "asset_files.txt is empty."
+          
+          # This part is already in your "Create GitHub Release" step but useful to mentally link
+          # asset_args=()
+          # while IFS= read -r -d $\'\\0\' file; do asset_args+=("$file"); done < asset_files.txt
+          # echo "Files that would be attached (from asset_args): ${asset_args[@]}"
 
       - name: Create Git Tag
         env:
