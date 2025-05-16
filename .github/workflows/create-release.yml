@@ -149,42 +149,53 @@ jobs:
 
   build_and_package:
     needs: calculate_next_version
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }} # Runs on the OS specified in the matrix
     strategy:
       matrix:
-        target: [x86_64-unknown-linux-gnu]
+        # Define build targets and corresponding OS
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-apple-darwin # Target for Apple Silicon Macs
+            os: macos-latest # macos-latest can cross-compile or run ARM via Rosetta
     outputs:
       release_assets_json: ${{ steps.prepare_assets.outputs.release_assets_json }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install protoc (protobuf-compiler)
+      - name: Install protoc (protobuf-compiler) for Linux
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install protoc (protobuf-compiler) for macOS
+        if: runner.os == 'macOS'
+        run: brew install protobuf
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: nightly-2024-12-24
           components: rustfmt, clippy, rust-src
-          targets: wasm32-unknown-unknown
+          targets: wasm32-unknown-unknown, ${{ matrix.target }}
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+          prefix-key: v0-rust-${{ matrix.os }}-${{ matrix.target }}
 
       - name: Build quantus-node binary (if not fast testing)
         if: github.event.inputs.fast_test_create_release_job == 'false'
-        run: cargo build --locked --release --package quantus-node
+        run: cargo build --locked --release --package quantus-node --target ${{ matrix.target }}
 
       - name: Create dummy quantus-node binary (for fast test)
         if: github.event.inputs.fast_test_create_release_job == 'true'
         run: |
-          mkdir -p target/release
-          echo "This is a dummy quantus-node for fast testing. Actual build skipped." > target/release/quantus-node
-          chmod +x target/release/quantus-node
-          echo "Dummy quantus-node created at target/release/quantus-node"
+          mkdir -p target/${{ matrix.target }}/release
+          echo "This is a dummy quantus-node for fast testing (${{ matrix.target }}). Actual build skipped." > target/${{ matrix.target }}/release/quantus-node
+          chmod +x target/${{ matrix.target }}/release/quantus-node
+          echo "Dummy quantus-node created at target/${{ matrix.target }}/release/quantus-node"
 
       - name: Prepare Release Assets
         id: prepare_assets
@@ -193,13 +204,14 @@ jobs:
           TARGET_ARCH: ${{ matrix.target }}
         run: |
           # Determine asset names based on version and target
-          NODE_BINARY_NAME="quantus-node" # From previous discussion
+          NODE_BINARY_NAME="quantus-node"
           asset_name="${NODE_BINARY_NAME}-${NEW_VERSION}-${TARGET_ARCH}.tar.gz"
           checksum_file_name="sha256sums-${NEW_VERSION}-${TARGET_ARCH}.txt"
 
           # Create staging directory for assets
           mkdir staging
-          cp target/release/${NODE_BINARY_NAME} staging/
+          # Copy from target-specific path
+          cp target/${TARGET_ARCH}/release/${NODE_BINARY_NAME} staging/
           
           # Create tarball
           (cd staging && tar -czvf "../${asset_name}" ${NODE_BINARY_NAME})
@@ -246,8 +258,8 @@ jobs:
       - name: Generate asset list file
         run: |
           ls -R
-          # Find all asset files from the downloaded artifacts
-          bash -c 'find release-assets-x86_64-unknown-linux-gnu -type f \( -name "*.tar.gz" -o -name "*.txt" \) -print0' > asset_files.txt
+          # Find all asset files from all downloaded artifact directories
+          bash -c 'find release-assets-* -type f \( -name "*.tar.gz" -o -name "*.txt" \) -print0' > asset_files.txt
           echo "Collected asset files:"
           cat asset_files.txt | xargs -0 -n1
 
