@@ -176,7 +176,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles(\'\'\'**/Cargo.lock\'\'\') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build resonance-node binary
         # Assuming your node binary is named 'quantus-node' and is in the 'node' package
