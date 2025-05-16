@@ -292,32 +292,36 @@ jobs:
           IS_PRERELEASE: ${{ github.event.inputs.is_prerelease }}
           DRAFT_RELEASE: ${{ github.event.inputs.draft_release }}
         run: |
-          set -x # Echo all commands
-
           release_notes=$(printf "Automated release for version %s.\\nBuilt from branch: \`%s\`\\nCommit: \`%s\`" "$NEW_VERSION" "$BRANCH_NAME" "$COMMIT_SHA_SHORT")
-          # You can expand release_notes generation here, e.g., from CHANGELOG or commit messages
+          
+          # Write release notes to a file
+          printf "%s" "$release_notes" > release_notes.txt
 
-          # Collect asset files for the gh release create command
-          # The find command above created asset_files.txt
-          # We need to pass them as separate arguments to gh release create
+          # Collect asset files
           asset_args=()
-          while IFS= read -r -d $'\\0' file; do
+          while IFS= read -r -d $'\0' file; do
             asset_args+=("$file")
           done < asset_files.txt
 
-          echo "Files to attach: ${asset_args[@]}"
-          echo "Verifying existence and permissions of files to attach:"
-          for asset_file in "${asset_args[@]}"; do
-            ls -l "$asset_file"
-          done
+          echo "Debug: Release notes file content:"
+          cat release_notes.txt
+          echo "Debug: Files to attach to release:"
+          printf "'%s'\n" "${asset_args[@]}"
 
-          # Use the commit the workflow ran on as the target for the release
-          # Attach all collected asset files
-          gh release create "$NEW_VERSION" \\
-            --repo "$GITHUB_REPOSITORY" \\
-            --title "Release $NEW_VERSION" \\
-            --notes "$release_notes" \\
-            --target "$GITHUB_SHA" \\
-            $( [[ "$IS_PRERELEASE" == "true" ]] && echo "--prerelease" ) \\
-            $( [[ "$DRAFT_RELEASE" == "true" ]] && echo "--draft" ) \\
-            "${asset_args[@]}" 
+          gh release create "$NEW_VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Release $NEW_VERSION" \
+            --notes-file release_notes.txt \
+            --target "$GITHUB_SHA" \
+            $( [[ "$IS_PRERELEASE" == "true" ]] && echo "--prerelease" ) \
+            $( [[ "$DRAFT_RELEASE" == "true" ]] && echo "--draft" ) \
+            "${asset_args[@]}"
+
+  # This job runs after all build_and_package jobs are complete
+  delete_artifacts_after_release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete downloaded-artifacts
+        run: rm -rf downloaded-artifacts
+      - name: Delete staging directory
+        run: rm -rf staging 
