@@ -180,10 +180,16 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Build resonance-node binary
-        # Assuming your node binary is named 'quantus-node' and is in the 'node' package
-        # Adjust if your package is at the root or named differently
-        run: cargo build --release --package quantus-node # Or just `cargo build --release` if it's the main workspace package
+      - name: Build resonance-node binary with cross
+        uses: houseabsolute/actions-rust-cross@v1
+        with:
+          target: ${{ matrix.target }} # This will be 'linux-amd64' for now. For true cross-compilation, ensure matrix.target is a valid cross target.
+          command: 'build'
+          args: '--release --package quantus-node'
+          # Optional: specify cross version if needed, defaults to latest stable release of cross
+          # cross-version: 'latest' 
+          # Optional: specify Rust toolchain if different from default or what dtolnay/rust-toolchain sets up
+          # toolchain: 'stable'
 
       - name: Prepare Release Assets
         id: prepare_assets
