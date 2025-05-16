@@ -27,12 +27,12 @@ on:
       prerelease_identifier:
         description: 'Pre-release identifier (e.g., alpha, beta, rc). Only used if is_prerelease is true.'
         required: false
-        default: 'rc' # Default to release candidate
+        default: 'rc'
       draft_release:
         description: 'Create the release as a draft?'
         required: true
         type: boolean
-        default: true # Safer to start as draft
+        default: true
       fast_test_create_release_job:
         description: 'If true, skips actual build and uses dummy artifacts to test release creation steps.'
         required: false
@@ -54,7 +54,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Fetches all history for all tags and branches
+          fetch-depth: 0
 
       - name: Get current branch and commit SHA
         id: vars
@@ -149,10 +149,9 @@ jobs:
 
   build_and_package:
     needs: calculate_next_version
-    runs-on: ubuntu-latest # Add other OS if you build for them e.g., macos-latest
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        # Define build targets if you have multiple (e.g., different OS/arch)
         target: [x86_64-unknown-linux-gnu]
     outputs:
       release_assets_json: ${{ steps.prepare_assets.outputs.release_assets_json }}
@@ -215,27 +214,28 @@ jobs:
           # Storing paths relative to GITHUB_WORKSPACE
           asset_paths_json="[\\"${asset_name}\\", \\"${checksum_file_name}\\"]"
           echo "release_assets_json=${asset_paths_json}" >> $GITHUB_OUTPUT
-          ls -la # List files for verification
+          # List files for verification
+          ls -la
 
 
       - name: Upload Release Assets as Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-assets-${{ matrix.target }} # This will now be release-assets-x86_64-unknown-linux-gnu
-          path: | # Paths are relative to GITHUB_WORKSPACE
+          name: release-assets-${{ matrix.target }}
+          path: | 
             quantus-node-${{ needs.calculate_next_version.outputs.new_version }}-${{ matrix.target }}.tar.gz
             sha256sums-${{ needs.calculate_next_version.outputs.new_version }}-${{ matrix.target }}.txt
 
   create_github_release:
-    needs: [calculate_next_version, build_and_package] # Depends on version and assets
+    needs: [calculate_next_version, build_and_package] 
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Required to create releases and tags
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }} # Checkout the branch the workflow was run on
+          ref: ${{ github.ref }}
 
       - name: Download all release assets
         uses: actions/download-artifact@v4
@@ -285,20 +285,13 @@ jobs:
           
           echo "Files to attach: ${asset_args[@]}"
 
+          # Use the commit the workflow ran on as the target for the release
+          # Attach all collected asset files
           gh release create "$NEW_VERSION" \
             --repo "$GITHUB_REPOSITORY" \
             --title "Release $NEW_VERSION" \
             --notes "$release_notes" \
-            # Use the commit the workflow ran on
             --target "$GITHUB_SHA" \
             $( [[ "$IS_PRERELEASE" == "true" ]] && echo "--prerelease" ) \
             $( [[ "$DRAFT_RELEASE" == "true" ]] && echo "--draft" ) \
-            "${asset_args[@]}" # Attach all collected asset files 
-
-      - name: Generate asset list file
-        run: |
-          ls -R
-          # Find all asset files from the downloaded artifacts
-          bash -c 'find release-assets-x86_64-unknown-linux-gnu -type f \( -name "*.tar.gz" -o -name "*.txt" \) -print0' > asset_files.txt
-          echo "Collected asset files:"
-          cat asset_files.txt | xargs -0 -n1 
+            "${asset_args[@]}" 
