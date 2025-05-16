@@ -315,13 +315,4 @@ jobs:
             --target "$GITHUB_SHA" \
             $( [[ "$IS_PRERELEASE" == "true" ]] && echo "--prerelease" ) \
             $( [[ "$DRAFT_RELEASE" == "true" ]] && echo "--draft" ) \
-            "${asset_args[@]}"
-
-  # This job runs after all build_and_package jobs are complete
-  delete_artifacts_after_release:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Delete downloaded-artifacts
-        run: rm -rf downloaded-artifacts
-      - name: Delete staging directory
-        run: rm -rf staging 
+            "${asset_args[@]}" 
