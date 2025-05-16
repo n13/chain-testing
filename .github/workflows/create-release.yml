@@ -65,26 +65,17 @@ jobs:
       - name: Get latest tag
         id: latest_tag
         run: |
-          # Get the latest SemVer tag (vX.Y.Z or vX.Y.Z-pre.N)
-          # This complex awk script tries to find the highest semantic version.
-          # It handles pre-0.x.y, 0.x.y, and X.Y.Z versions.
-          # It also handles pre-releases correctly.
-          # If no tags found, defaults to v0.0.0 so bumping works for the first tag.
-          latest_semver_tag=$(git tag --list 'v*' --sort=-v:refname |
-            awk 'BEGIN{FS="[.-]";OFS="."} \
-            /^v[0-9]+\\.[0-9]+\\.[0-9]+(-[a-zA-Z0-9]+(\\.[0-9]+)?)?$/ { \
-              gsub(/^v/,"",$1); \
-              major=$1; minor=$2; patch_full=$3; \
-              split(patch_full, p, "-"); patch=p[1]; pre_id=""; pre_num=0; \
-              if (p[2]) { split(p[2], pr, "."); pre_id=pr[1]; pre_num=pr[2]?pr[2]:0; } \
-              current_val = major * 1000000 + minor * 10000 + patch * 100; \
-              if (pre_id != "") current_val -= (100 - (length(pre_id)*10 + pre_num)); # Heuristic to sort pre-releases lower
-              if (current_val > max_val) { max_val = current_val; best_tag = $0; } \
-            } END { if (best_tag) print "v"best_tag; else print "v0.0.0"; }'
-          )
+          # Attempt to get the latest vX.Y.Z tag
+          latest_semver_tag=$(git describe --tags --match "v[0-9]*.[0-9]*.[0-9]*" --abbrev=0 2>/dev/null || echo "v0.0.0")
+          if [[ "$latest_semver_tag" == "v0.0.0" ]]; then
+            # If no strict vX.Y.Z found, try to get any v* tag (e.g. v0.1.0-rc.1)
+            # and then strip potential pre-release to get a base for bumping,
+            # or fall back to v0.0.0 if still nothing.
+            # This is a fallback, the awk script was meant to handle this more gracefully.
+            latest_semver_tag=$(git describe --tags --match "v*" --abbrev=0 2>/dev/null | sed 's/-\(alpha\|beta\|rc\)\(\.[0-9]*\)?$//' || echo "v0.0.0")
+          fi
           echo "latest_tag_found=$latest_semver_tag" >> $GITHUB_OUTPUT
           echo "Latest semantic version tag found: $latest_semver_tag"
-
 
       - name: Calculate new version
         id: versioner
