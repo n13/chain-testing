@@ -153,8 +153,7 @@ jobs:
     strategy:
       matrix:
         # Define build targets if you have multiple (e.g., different OS/arch)
-        # For now, assuming one target: linux-amd64
-        target: [linux-amd64]
+        target: [x86_64-unknown-linux-gnu]
     outputs:
       release_assets_json: ${{ steps.prepare_assets.outputs.release_assets_json }}
     steps:
@@ -183,7 +182,7 @@ jobs:
       - name: Build resonance-node binary with cross
         uses: houseabsolute/actions-rust-cross@v1
         with:
-          target: ${{ matrix.target }} # This will be 'linux-amd64' for now. For true cross-compilation, ensure matrix.target is a valid cross target.
+          target: ${{ matrix.target }} # This will now be x86_64-unknown-linux-gnu
           command: 'build'
           args: '--release --package quantus-node'
           # Optional: specify cross version if needed, defaults to latest stable release of cross
@@ -195,10 +194,9 @@ jobs:
         id: prepare_assets
         env:
           NEW_VERSION: ${{ needs.calculate_next_version.outputs.new_version }}
-          TARGET_ARCH: ${{ matrix.target }} # e.g., linux-amd64
+          TARGET_ARCH: ${{ matrix.target }} # This will now be x86_64-unknown-linux-gnu
         run: |
           # Determine asset names based on version and target
-          # Example naming: quantus-node-v1.2.3-linux-amd64.tar.gz
           NODE_BINARY_NAME="quantus-node" # From previous discussion
           asset_name="${NODE_BINARY_NAME}-${NEW_VERSION}-${TARGET_ARCH}.tar.gz"
           checksum_file_name="sha256sums-${NEW_VERSION}-${TARGET_ARCH}.txt"
@@ -226,7 +224,7 @@ jobs:
       - name: Upload Release Assets as Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-assets-${{ matrix.target }}
+          name: release-assets-${{ matrix.target }} # This will now be release-assets-x86_64-unknown-linux-gnu
           path: | # Paths are relative to GITHUB_WORKSPACE
             quantus-node-${{ needs.calculate_next_version.outputs.new_version }}-${{ matrix.target }}.tar.gz
             sha256sums-${{ needs.calculate_next_version.outputs.new_version }}-${{ matrix.target }}.txt
