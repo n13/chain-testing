@@ -1,0 +1,292 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Type of version bump (major, minor, patch) or specify custom version. For 0.x.y releases, major will bump 0.x -> 0.(x+1)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - custom
+      custom_version:
+        description: 'Custom version string (e.g., v1.2.3 or v0.2.1-beta.1). Only used if version_type is "custom". MUST start with "v" (e.g. v1.2.3)'
+        required: false
+      is_prerelease:
+        description: 'Is this a pre-release? (e.g., alpha, beta, rc)'
+        required: true
+        type: boolean
+        default: false
+      prerelease_identifier:
+        description: 'Pre-release identifier (e.g., alpha, beta, rc). Only used if is_prerelease is true.'
+        required: false
+        default: 'rc' # Default to release candidate
+      draft_release:
+        description: 'Create the release as a draft?'
+        required: true
+        type: boolean
+        default: true # Safer to start as draft
+      # Add an input for release notes if you want to paste them in manually
+      # release_notes:
+      #   description: 'Release notes content (Markdown)'
+      #   required: false
+
+jobs:
+  calculate_next_version:
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.versioner.outputs.new_version }}
+      commit_sha_short: ${{ steps.vars.outputs.commit_sha_short }}
+      branch_name: ${{ steps.vars.outputs.branch_name }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetches all history for all tags and branches
+
+      - name: Get current branch and commit SHA
+        id: vars
+        run: |
+          echo "commit_sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "branch_name=$(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Get latest tag
+        id: latest_tag
+        run: |
+          # Get the latest SemVer tag (vX.Y.Z or vX.Y.Z-pre.N)
+          # This complex awk script tries to find the highest semantic version.
+          # It handles pre-0.x.y, 0.x.y, and X.Y.Z versions.
+          # It also handles pre-releases correctly.
+          # If no tags found, defaults to v0.0.0 so bumping works for the first tag.
+          latest_semver_tag=$(git tag --list 'v*' --sort=-v:refname | \
+            awk \'\'\'BEGIN{FS="[.-]";OFS="."} \
+            /^v[0-9]+\\.[0-9]+\\.[0-9]+(-[a-zA-Z0-9]+(\\.[0-9]+)?)?$/ { \
+              gsub(/^v/,"",$1); \
+              major=$1; minor=$2; patch_full=$3; \
+              split(patch_full, p, "-"); patch=p[1]; pre_id=""; pre_num=0; \
+              if (p[2]) { split(p[2], pr, "."); pre_id=pr[1]; pre_num=pr[2]?pr[2]:0; } \
+              current_val = major * 1000000 + minor * 10000 + patch * 100; \
+              if (pre_id != "") current_val -= (100 - (length(pre_id)*10 + pre_num)); # Heuristic to sort pre-releases lower
+              if (current_val > max_val) { max_val = current_val; best_tag = $0; } \
+            } END { if (best_tag) print "v"best_tag; else print "v0.0.0"; }\'\'\' )
+          echo "latest_tag_found=$latest_semver_tag" >> $GITHUB_OUTPUT
+          echo "Latest semantic version tag found: $latest_semver_tag"
+
+
+      - name: Calculate new version
+        id: versioner
+        env:
+          LATEST_TAG: ${{ steps.latest_tag.outputs.latest_tag_found }}
+          VERSION_TYPE: ${{ github.event.inputs.version_type }}
+          CUSTOM_VERSION: ${{ github.event.inputs.custom_version }}
+          IS_PRERELEASE: ${{ github.event.inputs.is_prerelease }}
+          PRERELEASE_ID: ${{ github.event.inputs.prerelease_identifier }}
+        run: |
+          # Remove \'v\' prefix for processing
+          current_version=${LATEST_TAG#v}
+
+          if [[ "$VERSION_TYPE" == "custom" ]]; then
+            if [[ -z "$CUSTOM_VERSION" ]]; then
+              echo "Error: Custom version is selected but no custom_version string provided."
+              exit 1
+            fi
+            if [[ ! "$CUSTOM_VERSION" =~ ^v ]]; then
+              echo "Error: Custom version string MUST start with \'v\' (e.g., v1.2.3)."
+              exit 1
+            fi
+            new_version="$CUSTOM_VERSION"
+          else
+            # Split version and pre-release part
+            IFS=\'-\' read -r version_core prerelease_part <<< "$current_version"
+            IFS=\'.\' read -r major minor patch <<< "$version_core"
+
+            # Increment based on type
+            if [[ "$VERSION_TYPE" == "major" ]]; then
+              if [[ "$major" == "0" ]]; then # Handle 0.x.y -> 0.(x+1).0
+                major=$major
+                minor=$((minor + 1))
+                patch=0
+              else
+                major=$((major + 1))
+                minor=0
+                patch=0
+              fi
+            elif [[ "$VERSION_TYPE" == "minor" ]]; then
+              minor=$((minor + 1))
+              patch=0
+            elif [[ "$VERSION_TYPE" == "patch" ]]; then
+              patch=$((patch + 1))
+            else
+              echo "Error: Invalid version_type: $VERSION_TYPE"
+              exit 1
+            fi
+            new_version_core="v$major.$minor.$patch"
+
+            if [[ "$IS_PRERELEASE" == "true" ]]; then
+              prerelease_num=1
+              # If current was a prerelease of the same core and same ID, increment number
+              if [[ "$prerelease_part" =~ ^$PRERELEASE_ID\\.([0-9]+)$ ]]; then
+                # Check if base version matches after potential increment
+                # This logic gets tricky if we bump minor/major and also want a prerelease
+                # For simplicity, if major/minor/patch is bumped, new prerelease starts at .1
+                # If only toggling IS_PRERELEASE or changing PRERELEASE_ID on same core, then consider incrementing.
+                # Current logic: a new version bump (patch/minor/major) resets prerelease to .1
+                prerelease_num=1 # Simplified: always start at .1 for new core version
+              elif [[ "$prerelease_part" =~ ^$PRERELEASE_ID$ ]]; then
+                 prerelease_num=1 # also start at .1 if it was just "alpha"
+              fi
+              new_version="$new_version_core-$PRERELEASE_ID.$prerelease_num"
+            else
+              new_version="$new_version_core"
+            fi
+          fi
+          echo "New version: $new_version"
+          echo "new_version=$new_version" >> $GITHUB_OUTPUT
+
+  build_and_package:
+    needs: calculate_next_version
+    runs-on: ubuntu-latest # Add other OS if you build for them e.g., macos-latest
+    strategy:
+      matrix:
+        # Define build targets if you have multiple (e.g., different OS/arch)
+        # For now, assuming one target: linux-amd64
+        target: [linux-amd64]
+    outputs:
+      release_assets_json: ${{ steps.prepare_assets.outputs.release_assets_json }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        # No need to specify ref, it defaults to the commit that triggered the workflow
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable # Or your specific Rust toolchain
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles(\'\'\'**/Cargo.lock\'\'\') }}
+
+      - name: Build resonance-node binary
+        # Assuming your node binary is named 'quantus-node' and is in the 'node' package
+        # Adjust if your package is at the root or named differently
+        run: cargo build --release --package quantus-node # Or just `cargo build --release` if it's the main workspace package
+
+      - name: Prepare Release Assets
+        id: prepare_assets
+        env:
+          NEW_VERSION: ${{ needs.calculate_next_version.outputs.new_version }}
+          TARGET_ARCH: ${{ matrix.target }} # e.g., linux-amd64
+        run: |
+          # Determine asset names based on version and target
+          # Example naming: quantus-node-v1.2.3-linux-amd64.tar.gz
+          NODE_BINARY_NAME="quantus-node" # From previous discussion
+          asset_name="${NODE_BINARY_NAME}-${NEW_VERSION}-${TARGET_ARCH}.tar.gz"
+          checksum_file_name="sha256sums-${NEW_VERSION}-${TARGET_ARCH}.txt"
+
+          # Create staging directory for assets
+          mkdir staging
+          cp target/release/${NODE_BINARY_NAME} staging/
+          
+          # Create tarball
+          (cd staging && tar -czvf "../${asset_name}" ${NODE_BINARY_NAME})
+          
+          # Generate checksum for the tarball
+          sha256sum "${asset_name}" > "${checksum_file_name}"
+          
+          echo "Created asset: ${asset_name}"
+          echo "Created checksum file: ${checksum_file_name}"
+
+          # Prepare JSON output for artifact upload and release creation
+          # Storing paths relative to GITHUB_WORKSPACE
+          asset_paths_json="[\\"${asset_name}\\", \\"${checksum_file_name}\\"]"
+          echo "release_assets_json=${asset_paths_json}" >> $GITHUB_OUTPUT
+          ls -la # List files for verification
+
+
+      - name: Upload Release Assets as Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-assets-${{ matrix.target }}
+          path: | # Paths are relative to GITHUB_WORKSPACE
+            quantus-node-${{ needs.calculate_next_version.outputs.new_version }}-${{ matrix.target }}.tar.gz
+            sha256sums-${{ needs.calculate_next_version.outputs.new_version }}-${{ matrix.target }}.txt
+
+  create_github_release:
+    needs: [calculate_next_version, build_and_package] # Depends on version and assets
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to create releases and tags
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }} # Checkout the branch the workflow was run on
+
+      - name: Download all release assets
+        uses: actions/download-artifact@v3
+        # No \'name\' specified, downloads all artifacts from previous jobs in this workflow run
+        # This will create directories like \'release-assets-linux-amd64/\'
+        # We\'ll need to find the files within these directories.
+
+      - name: List downloaded artifacts (for debugging)
+        run: |
+          ls -R
+          # Find all asset files from the downloaded artifacts
+          find . -type f \\( -name "*.tar.gz" -o -name "*.txt" \\) -print0 > asset_files.txt
+          echo "Collected asset files:"
+          cat asset_files.txt | xargs -0 -n1
+
+      - name: Create Git Tag
+        env:
+          NEW_VERSION: ${{ needs.calculate_next_version.outputs.new_version }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+          git tag -a "$NEW_VERSION" -m "Release $NEW_VERSION"
+          git push origin "$NEW_VERSION"
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ needs.calculate_next_version.outputs.new_version }}
+          COMMIT_SHA_SHORT: ${{ needs.calculate_next_version.outputs.commit_sha_short }}
+          BRANCH_NAME: ${{ needs.calculate_next_version.outputs.branch_name }}
+          IS_PRERELEASE: ${{ github.event.inputs.is_prerelease }}
+          DRAFT_RELEASE: ${{ github.event.inputs.draft_release }}
+        run: |
+          release_notes="Automated release for version ${NEW_VERSION}."
+          release_notes+="\nBuilt from branch: \`${BRANCH_NAME}\`"
+          release_notes+="\nCommit: \`${COMMIT_SHA_SHORT}\`"
+          # You can expand release_notes generation here, e.g., from CHANGELOG or commit messages
+
+          # Collect asset files for the gh release create command
+          # The find command above created asset_files.txt
+          # We need to pass them as separate arguments to gh release create
+          asset_args=()
+          while IFS= read -r -d $\'\\0\' file; do
+            asset_args+=("$file")
+          done < asset_files.txt
+          
+          echo "Files to attach: ${asset_args[@]}"
+
+          gh release create "$NEW_VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Release $NEW_VERSION" \
+            --notes "$release_notes" \
+            --target "$GITHUB_SHA" \ # Use the commit the workflow ran on
+            $( [[ "$IS_PRERELEASE" == "true" ]] && echo "--prerelease" ) \
+            $( [[ "$DRAFT_RELEASE" == "true" ]] && echo "--draft" ) \
+            "${asset_args[@]}" # Attach all collected asset files 
