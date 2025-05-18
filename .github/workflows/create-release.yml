@@ -161,7 +161,7 @@ jobs:
         with:
           toolchain: nightly-2024-12-24
           components: rustfmt, clippy, rust-src
-          targ
+          targets: wasm32-unknown-unknown, ${{ matrix.target }}
 
       - name: Create dummy quantus-node binary (for fast test)
         if: github.event.inputs.fast_test_create_release_job == 'true'
@@ -235,31 +235,70 @@ jobs:
             sha256sums-${{ needs.calculate_next_version.outputs.new_version }}-${{ matrix.target }}.txt
 
   create_github_release:
-    needs: build_and_package
+    needs: [calculate_next_version, build_and_package]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Download all release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: downloaded-artifacts
+
+      - name: Generate asset list file
+        run: |
+          echo "--- Directory structure of downloaded-artifacts ---"
+          ls -R downloaded-artifacts
+          echo "--- Finding asset files ---"
+          bash -c 'find downloaded-artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.txt" \) -print0' > asset_files.txt
+          echo "--- Raw content of asset_files.txt (null characters will not be visible) ---"
+          cat asset_files.txt 
+          echo "--- Processed content of asset_files.txt (one file per line) ---"
+          cat asset_files.txt | xargs -0 -n1
+          echo "--- End of Generate asset list file step ---"
+
+      - name: Create Git Tag
+        env:
+          NEW_VERSION: ${{ needs.calculate_next_version.outputs.new_version }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+          git tag -a "$NEW_VERSION" -m "Release $NEW_VERSION"
+          git push origin "$NEW_VERSION"
 
       - name: Create GitHub Release
-        id: create_release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_NAME: ${{ needs.calculate_next_version.outputs.new_version }}
-          RELEASE_BODY: |
-            This release includes the following assets:
-            - ${{ env.NODE_BASE_NAME_FOR_UPLOAD }}-${{ needs.calculate_next_version.outputs.new_version }}-${{ matrix.target }}.${{ env.ARCHIVE_EXTENSION_FOR_UPLOAD }}
-            - sha256sums-${{ needs.calculate_next_version.outputs.new_version }}-${{ matrix.target }}.txt
+          NEW_VERSION: ${{ needs.calculate_next_version.outputs.new_version }}
+          COMMIT_SHA_SHORT: ${{ needs.calculate_next_version.outputs.commit_sha_short }}
+          BRANCH_NAME: ${{ needs.calculate_next_version.outputs.branch_name }}
+          IS_PRERELEASE: ${{ github.event.inputs.is_prerelease }}
+          DRAFT_RELEASE: ${{ github.event.inputs.draft_release }}
         run: |
-          gh release create $RELEASE_NAME --title $RELEASE_NAME --notes "$RELEASE_BODY" --target ${{ needs.calculate_next_version.outputs.commit_sha_short }}
+          release_notes=$(printf "Automated release for version %s.\\nBuilt from branch: \`%s\`\\nCommit: \`%s\`" "$NEW_VERSION" "$BRANCH_NAME" "$COMMIT_SHA_SHORT")
+          printf "%s" "$release_notes" > release_notes.txt
 
-      - name: Upload Release Assets as Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-assets-${{ matrix.target }}
-          path: |
-            ${{ env.NODE_BASE_NAME_FOR_UPLOAD }}-${{ needs.calculate_next_version.outputs.new_version }}-${{ matrix.target }}.${{ env.ARCHIVE_EXTENSION_FOR_UPLOAD }}
-            sha256sums-${{ needs.calculate_next_version.outputs.new_version }}-${{ matrix.target }}.txt
-        env:
-          NODE_BASE_NAME_FOR_UPLOAD: quantus-node # Needs to be accessible here
-          ARCHIVE_EXTENSION_FOR_UPLOAD: ${{ runner.os == 'Windows' && 'zip' || 'tar.gz' }}
+          asset_args=()
+          while IFS= read -r -d $'\0' file; do
+            asset_args+=("$file")
+          done < asset_files.txt
+
+          echo "Debug: Release notes file content:"
+          cat release_notes.txt
+          echo "Debug: Files to attach to release:"
+          printf "'%s'\n" "${asset_args[@]}"
+
+          gh release create "$NEW_VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Release $NEW_VERSION" \
+            --notes-file release_notes.txt \
+            --target "$GITHUB_SHA" \
+            $( [[ "$IS_PRERELEASE" == "true" ]] && echo "--prerelease" ) \
+            $( [[ "$DRAFT_RELEASE" == "true" ]] && echo "--draft" ) \
+            "${asset_args[@]}"
