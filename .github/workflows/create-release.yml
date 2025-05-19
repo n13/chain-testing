@@ -231,11 +231,11 @@ jobs:
           echo "RUSTUP_TOOLCHAIN=$TOOLCHAIN_NIGHTLY_VERSION" >> $GITHUB_ENV
           echo "Installed Rust toolchain: $(rustc --version)"
 
-      - name: Build quantus-node binary (if not fast testing)
+      - name: Build quantus-node binary
         if: github.event.inputs.fast_test_create_release_job == 'false'
         run: cargo build --locked --release --package quantus-node --target ${{ matrix.target }}
 
-      - name: Create dummy quantus-node binary (for fast test Linux/macOS)
+      - name: Create dummy quantus-node binary (fast test mode)
         if: github.event.inputs.fast_test_create_release_job == 'true' && (runner.os == 'Linux' || runner.os == 'macOS')
         run: |
           mkdir -p target/${{ matrix.target }}/release
