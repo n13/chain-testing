@@ -341,7 +341,7 @@ jobs:
           echo "--- Directory structure of downloaded-artifacts ---"
           ls -R downloaded-artifacts
           echo "--- Finding asset files ---"
-          bash -c 'find downloaded-artifacts -type f \\( -name "*.tar.gz" -o -name "*.zip" -o -name "*.txt" \\) -print0' > asset_files.txt # Added .zip
+          find downloaded-artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.txt" \) -print0 > asset_files.txt
           echo "--- Raw content of asset_files.txt (null characters will not be visible) ---"
           cat asset_files.txt 
           echo "--- Processed content of asset_files.txt (one file per line) ---"
