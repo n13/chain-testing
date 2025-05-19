@@ -271,11 +271,11 @@ jobs:
             NODE_EXECUTABLE_NAME="${NODE_BASE_NAME}"
             ARCHIVE_EXTENSION="tar.gz"
             if [[ "${{ runner.os }}" == "macOS" ]]; then
-              CHSUM_EXEC="shasum -a 256 '\\${asset_name}' > '\\${checksum_file_name}'"
+              CHSUM_EXEC="shasum -a 256 '\${asset_name}' > '\${checksum_file_name}'"
             else
-              CHSUM_EXEC="sha256sum '\\${asset_name}' > '\\${checksum_file_name}'"
+              CHSUM_EXEC="sha256sum '\${asset_name}' > '\${checksum_file_name}'"
             fi
-            ARCHIVE_EXEC="sh -c 'cd staging && tar -czvf \"../\\${asset_name}\" \"\\${NODE_EXECUTABLE_NAME}\"'"
+            ARCHIVE_EXEC="{ cd staging && tar -czvf \"../\${asset_name}\" \"\${NODE_EXECUTABLE_NAME}\"; }"
           fi
 
           asset_name="${NODE_BASE_NAME}-${NEW_VERSION}-${TARGET_ARCH}.${ARCHIVE_EXTENSION}"
