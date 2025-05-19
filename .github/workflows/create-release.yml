@@ -149,7 +149,7 @@ jobs:
 
   build_and_package:
     needs: calculate_next_version
-    runs-on: ${{ matrix.os }} # Runs on the OS specified in the matrix
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
@@ -257,7 +257,6 @@ jobs:
         env:
           NEW_VERSION: ${{ needs.calculate_next_version.outputs.new_version }}
           TARGET_ARCH: ${{ matrix.target }}
-        # Use bash for Linux/macOS, allow PowerShell for Windows specific commands
         shell: bash 
         run: |
           NODE_BASE_NAME="quantus-node"
@@ -265,34 +264,49 @@ jobs:
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             NODE_EXECUTABLE_NAME="${NODE_BASE_NAME}.exe"
             ARCHIVE_EXTENSION="zip"
-            CHSUM_EXEC="powershell -Command \\"(Get-FileHash -Algorithm SHA256 '\\${asset_name}').Hash.ToLower() + ' *\\${asset_name}' | Set-Content -Encoding ascii '\\${checksum_file_name}'\\""
-            ARCHIVE_EXEC="powershell -Command \\"Compress-Archive -Path staging/\\${NODE_EXECUTABLE_NAME} -DestinationPath \\${asset_name}\\""
-          else
-            NODE_EXECUTABLE_NAME="${NODE_BASE_NAME}"
-            ARCHIVE_EXTENSION="tar.gz"
+            # These are defined for eval later
+            CHSUM_EXEC="powershell -Command \"(Get-FileHash -Algorithm SHA256 '\${asset_name}').Hash.ToLower() + ' *\${asset_name}' | Set-Content -Encoding ascii '\${checksum_file_name}'\""
+            ARCHIVE_EXEC="powershell -Command \"Compress-Archive -Path staging/\${NODE_EXECUTABLE_NAME} -DestinationPath \${asset_name}\""
+            
+            # asset_name and checksum_file_name will be defined globally below for Windows path
+            asset_name="${NODE_BASE_NAME}-${NEW_VERSION}-${TARGET_ARCH}.${ARCHIVE_EXTENSION}"
+            checksum_file_name="sha256sums-${NEW_VERSION}-${TARGET_ARCH}.txt"
+
+            mkdir -p staging
+            cp "target/${TARGET_ARCH}/release/${NODE_EXECUTABLE_NAME}" "staging/"
+            
+            eval "$ARCHIVE_EXEC"
+            eval "$CHSUM_EXEC"
+
+          else # Linux or macOS
+            NODE_BINARY_NAME="quantus-node"
+            asset_name="${NODE_BINARY_NAME}-${NEW_VERSION}-${TARGET_ARCH}.tar.gz"
+            checksum_file_name="sha256sums-${NEW_VERSION}-${TARGET_ARCH}.txt"
+
+            # Create staging directory for assets
+            mkdir staging
+            # Copy from target-specific path
+            cp target/${TARGET_ARCH}/release/${NODE_BINARY_NAME} staging/
+            
+            # Create tarball
+            (cd staging && tar -czvf "../${asset_name}" ${NODE_BINARY_NAME})
+            
+            # Generate checksum for the tarball
             if [[ "${{ runner.os }}" == "macOS" ]]; then
-              CHSUM_EXEC="shasum -a 256 '\${asset_name}' > '\${checksum_file_name}'"
+              shasum -a 256 "${asset_name}" > "${checksum_file_name}"
             else
-              CHSUM_EXEC="sha256sum '\${asset_name}' > '\${checksum_file_name}'"
-            fi
-            ARCHIVE_EXEC="{ cd staging && tar -czvf \"../\${asset_name}\" \"\${NODE_EXECUTABLE_NAME}\"; }"
+              sha256sum "${asset_name}" > "${checksum_file_name}"
+            fi          
           fi
 
-          asset_name="${NODE_BASE_NAME}-${NEW_VERSION}-${TARGET_ARCH}.${ARCHIVE_EXTENSION}"
-          checksum_file_name="sha256sums-${NEW_VERSION}-${TARGET_ARCH}.txt"
-
-          mkdir staging
-          cp "target/${TARGET_ARCH}/release/${NODE_EXECUTABLE_NAME}" "staging/"
-          
-          # Execute archiving and checksum commands
-          eval "$ARCHIVE_EXEC"
-          eval "$CHSUM_EXEC"
-          
           echo "Created asset: ${asset_name}"
           echo "Created checksum file: ${checksum_file_name}"
 
-          asset_paths_json="[\\\"${asset_name}\\\", \\\"${checksum_file_name}\\\"]"
+          # Prepare JSON output for artifact upload and release creation
+          # Storing paths relative to GITHUB_WORKSPACE
+          asset_paths_json="[\\"${asset_name}\\", \\"${checksum_file_name}\\"]"
           echo "release_assets_json=${asset_paths_json}" >> $GITHUB_OUTPUT
+          # List files for verification
           ls -la
 
       - name: Upload Release Assets as Artifacts
