@@ -152,12 +152,13 @@ jobs:
     runs-on: ${{ matrix.os }} # Runs on the OS specified in the matrix
     strategy:
       matrix:
-        # Define build targets and corresponding OS
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-          - target: aarch64-apple-darwin # Target for Apple Silicon Macs
-            os: macos-latest # macos-latest can cross-compile or run ARM via Rosetta
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
     outputs:
       release_assets_json: ${{ steps.prepare_assets.outputs.release_assets_json }}
     steps:
@@ -172,6 +173,10 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install protobuf
 
+      - name: Install protoc (protobuf-compiler) for Windows
+        if: runner.os == 'Windows'
+        run: choco install protoc --yes --no-progress
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -183,57 +188,72 @@ jobs:
         if: github.event.inputs.fast_test_create_release_job == 'false'
         run: cargo build --locked --release --package quantus-node --target ${{ matrix.target }}
 
-      - name: Create dummy quantus-node binary (for fast test)
-        if: github.event.inputs.fast_test_create_release_job == 'true'
+      - name: Create dummy quantus-node binary (for fast test Linux/macOS)
+        if: github.event.inputs.fast_test_create_release_job == 'true' && (runner.os == 'Linux' || runner.os == 'macOS')
         run: |
           mkdir -p target/${{ matrix.target }}/release
           echo "This is a dummy quantus-node for fast testing (${{ matrix.target }}). Actual build skipped." > target/${{ matrix.target }}/release/quantus-node
           chmod +x target/${{ matrix.target }}/release/quantus-node
           echo "Dummy quantus-node created at target/${{ matrix.target }}/release/quantus-node"
 
+      - name: Create dummy quantus-node.exe binary (for fast test Windows)
+        if: github.event.inputs.fast_test_create_release_job == 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dummy_dir = "target/${{ matrix.target }}/release"
+          New-Item -ItemType Directory -Path $dummy_dir -Force | Out-Null
+          Set-Content -Path "$dummy_dir/quantus-node.exe" -Value "This is a dummy quantus-node.exe for fast testing (${{ matrix.target }}). Actual build skipped."
+          Write-Host "Dummy quantus-node.exe created at $dummy_dir/quantus-node.exe"
+
       - name: Prepare Release Assets
         id: prepare_assets
         env:
           NEW_VERSION: ${{ needs.calculate_next_version.outputs.new_version }}
           TARGET_ARCH: ${{ matrix.target }}
+        # Use bash for Linux/macOS, allow PowerShell for Windows specific commands
+        shell: bash 
         run: |
-          # Determine asset names based on version and target
-          NODE_BINARY_NAME="quantus-node"
-          asset_name="${NODE_BINARY_NAME}-${NEW_VERSION}-${TARGET_ARCH}.tar.gz"
+          NODE_BASE_NAME="quantus-node"
+          
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            NODE_EXECUTABLE_NAME="${NODE_BASE_NAME}.exe"
+            ARCHIVE_EXTENSION="zip"
+            CHSUM_EXEC="powershell -Command \\"(Get-FileHash -Algorithm SHA256 '${asset_name}').Hash.ToLower() + ' *${asset_name}' | Set-Content -Encoding ascii '${checksum_file_name}'\\""
+            ARCHIVE_EXEC="powershell -Command \\"Compress-Archive -Path staging/${NODE_EXECUTABLE_NAME} -DestinationPath ${asset_name}\\""
+          else
+            NODE_EXECUTABLE_NAME="${NODE_BASE_NAME}"
+            ARCHIVE_EXTENSION="tar.gz"
+            if [[ "${{ runner.os }}" == "macOS" ]]; then
+              CHSUM_EXEC="shasum -a 256 '${asset_name}' > '${checksum_file_name}'"
+            else
+              CHSUM_EXEC="sha256sum '${asset_name}' > '${checksum_file_name}'"
+            fi
+            ARCHIVE_EXEC="(cd staging && tar -czvf \\"../${asset_name}\\" \\"${NODE_EXECUTABLE_NAME}\\")"
+          fi
+
+          asset_name="${NODE_BASE_NAME}-${NEW_VERSION}-${TARGET_ARCH}.${ARCHIVE_EXTENSION}"
           checksum_file_name="sha256sums-${NEW_VERSION}-${TARGET_ARCH}.txt"
 
-          # Create staging directory for assets
           mkdir staging
-          # Copy from target-specific path
-          cp target/${TARGET_ARCH}/release/${NODE_BINARY_NAME} staging/
+          cp "target/${TARGET_ARCH}/release/${NODE_EXECUTABLE_NAME}" "staging/"
           
-          # Create tarball
-          (cd staging && tar -czvf "../${asset_name}" ${NODE_BINARY_NAME})
-          
-          # Generate checksum for the tarball
-          if [[ "${{ runner.os }}" == "macOS" ]]; then
-            shasum -a 256 "${asset_name}" > "${checksum_file_name}"
-          else
-            sha256sum "${asset_name}" > "${checksum_file_name}"
-          fi
+          # Execute archiving and checksum commands
+          eval "$ARCHIVE_EXEC"
+          eval "$CHSUM_EXEC"
           
           echo "Created asset: ${asset_name}"
           echo "Created checksum file: ${checksum_file_name}"
 
-          # Prepare JSON output for artifact upload and release creation
-          # Storing paths relative to GITHUB_WORKSPACE
-          asset_paths_json="[\\"${asset_name}\\", \\"${checksum_file_name}\\"]"
+          asset_paths_json="[\\\"${asset_name}\\\", \\\"${checksum_file_name}\\\"]"
           echo "release_assets_json=${asset_paths_json}" >> $GITHUB_OUTPUT
-          # List files for verification
           ls -la
-
 
       - name: Upload Release Assets as Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-assets-${{ matrix.target }}
           path: | 
-            quantus-node-${{ needs.calculate_next_version.outputs.new_version }}-${{ matrix.target }}.tar.gz
+            quantus-node-${{ needs.calculate_next_version.outputs.new_version }}-${{ matrix.target }}.${{ runner.os == 'Windows' && 'zip' || 'tar.gz' }}
             sha256sums-${{ needs.calculate_next_version.outputs.new_version }}-${{ matrix.target }}.txt
 
   create_github_release:
@@ -260,7 +280,7 @@ jobs:
           echo "--- Directory structure of downloaded-artifacts ---"
           ls -R downloaded-artifacts
           echo "--- Finding asset files ---"
-          bash -c 'find downloaded-artifacts -type f \( -name "*.tar.gz" -o -name "*.txt" \) -print0' > asset_files.txt
+          bash -c 'find downloaded-artifacts -type f \\( -name "*.tar.gz" -o -name "*.zip" -o -name "*.txt" \\) -print0' > asset_files.txt # Added .zip
           echo "--- Raw content of asset_files.txt (null characters will not be visible) ---"
           cat asset_files.txt 
           echo "--- Processed content of asset_files.txt (one file per line) ---"
