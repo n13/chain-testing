@@ -178,11 +178,58 @@ jobs:
         run: choco install protoc --yes --no-progress
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: nightly-2024-12-24
-          components: rustfmt, clippy, rust-src
-          targets: wasm32-unknown-unknown, ${{ matrix.target }}
+        shell: bash
+        env:
+          # Ensure GITHUB_PATH is available for bash scripts
+          # RUSTUP_TOOLCHAIN_NAME: nightly-2024-12-24 # Directly use the string for simplicity in script
+          RUST_COMPONENTS: "rustfmt,clippy,rust-src"
+          RUST_TARGETS_ADDITIONAL: "wasm32-unknown-unknown"
+        run: |
+          set -e
+          TOOLCHAIN_NIGHTLY_VERSION="nightly-2024-12-24"
+          echo "Installing toolchain: $TOOLCHAIN_NIGHTLY_VERSION"
+          echo "With components: $RUST_COMPONENTS"
+          echo "With targets for matrix.target (${{ matrix.target }}): already included in install cmd."
+          echo "With additional targets: $RUST_TARGETS_ADDITIONAL"
+
+          # Commands to execute
+          CMD_TOOLCHAIN_INSTALL="rustup toolchain install $TOOLCHAIN_NIGHTLY_VERSION --profile minimal --no-self-update --target ${{ matrix.target }}"
+          CMD_COMPONENTS_ADD="rustup component add $(echo $RUST_COMPONENTS | sed 's/,/ /g') --toolchain $TOOLCHAIN_NIGHTLY_VERSION"
+          CMD_TARGET_ADD="rustup target add $RUST_TARGETS_ADDITIONAL --toolchain $TOOLCHAIN_NIGHTLY_VERSION"
+
+          FULL_COMMAND="$CMD_TOOLCHAIN_INSTALL && $CMD_COMPONENTS_ADD && $CMD_TARGET_ADD"
+
+          MAX_ATTEMPTS=3
+          ATTEMPT_NUM=1
+          SUCCESS=false
+          while [ $ATTEMPT_NUM -le $MAX_ATTEMPTS ]; do
+            echo "Attempt $ATTEMPT_NUM/$MAX_ATTEMPTS: Running toolchain installation..."
+            # Using subshell for the command to avoid `set -e` exiting the whole script on first failure
+            if (eval "$FULL_COMMAND"); then
+              SUCCESS=true
+              echo "Toolchain installation successful."
+              break
+            fi
+            echo "Attempt $ATTEMPT_NUM failed."
+            ATTEMPT_NUM=$((ATTEMPT_NUM+1))
+            if [ $ATTEMPT_NUM -gt $MAX_ATTEMPTS ]; then
+              echo "All $MAX_ATTEMPTS attempts failed to install Rust toolchain."
+              exit 1
+            fi
+            echo "Retrying in 30 seconds..."
+            sleep 30
+          done
+
+          if [ "$SUCCESS" = false ]; then
+            # This state should ideally not be reached if loop exits with exit 1 above, but as a safeguard.
+            echo "Critical error: Toolchain installation marked as failed despite loop completion logic."
+            exit 1
+          fi
+
+          rustup default $TOOLCHAIN_NIGHTLY_VERSION
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          echo "RUSTUP_TOOLCHAIN=$TOOLCHAIN_NIGHTLY_VERSION" >> $GITHUB_ENV
+          echo "Installed Rust toolchain: $(rustc --version)"
 
       - name: Build quantus-node binary (if not fast testing)
         if: github.event.inputs.fast_test_create_release_job == 'false'
@@ -218,17 +265,17 @@ jobs:
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             NODE_EXECUTABLE_NAME="${NODE_BASE_NAME}.exe"
             ARCHIVE_EXTENSION="zip"
-            CHSUM_EXEC="powershell -Command \\"(Get-FileHash -Algorithm SHA256 '${asset_name}').Hash.ToLower() + ' *${asset_name}' | Set-Content -Encoding ascii '${checksum_file_name}'\\""
-            ARCHIVE_EXEC="powershell -Command \\"Compress-Archive -Path staging/${NODE_EXECUTABLE_NAME} -DestinationPath ${asset_name}\\""
+            CHSUM_EXEC="powershell -Command \\"(Get-FileHash -Algorithm SHA256 '\\${asset_name}').Hash.ToLower() + ' *\\${asset_name}' | Set-Content -Encoding ascii '\\${checksum_file_name}'\\""
+            ARCHIVE_EXEC="powershell -Command \\"Compress-Archive -Path staging/\\${NODE_EXECUTABLE_NAME} -DestinationPath \\${asset_name}\\""
           else
             NODE_EXECUTABLE_NAME="${NODE_BASE_NAME}"
             ARCHIVE_EXTENSION="tar.gz"
             if [[ "${{ runner.os }}" == "macOS" ]]; then
-              CHSUM_EXEC="shasum -a 256 '${asset_name}' > '${checksum_file_name}'"
+              CHSUM_EXEC="shasum -a 256 '\\${asset_name}' > '\\${checksum_file_name}'"
             else
-              CHSUM_EXEC="sha256sum '${asset_name}' > '${checksum_file_name}'"
+              CHSUM_EXEC="sha256sum '\\${asset_name}' > '\\${checksum_file_name}'"
             fi
-            ARCHIVE_EXEC="(cd staging && tar -czvf \\"../${asset_name}\\" \\"${NODE_EXECUTABLE_NAME}\\")"
+            ARCHIVE_EXEC="sh -c 'cd staging && tar -czvf \"../\\${asset_name}\" \"\\${NODE_EXECUTABLE_NAME}\"'"
           fi
 
           asset_name="${NODE_BASE_NAME}-${NEW_VERSION}-${TARGET_ARCH}.${ARCHIVE_EXTENSION}"
