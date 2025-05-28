@@ -290,7 +290,7 @@ jobs:
 
       - name: Build quantus-node binary
         if: github.event.inputs.fast_test_create_release_job == 'false'
-        run: cargo build --locked --release --package quantus-node --target ${{ matrix.target }}
+        run: cargo build --release --package quantus-node --target ${{ matrix.target }}
 
       - name: Create dummy quantus-node binary (fast test mode)
         if: github.event.inputs.fast_test_create_release_job == 'true' && (runner.os == 'Linux' || runner.os == 'macOS')
