@@ -143,6 +143,9 @@ jobs:
   update_cargo_toml:
     needs: calculate_next_version
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
