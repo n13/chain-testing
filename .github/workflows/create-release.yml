@@ -142,54 +142,48 @@ jobs:
 
   update_cargo_toml:
     needs: calculate_next_version
-    runs-on: ubuntu-latest # Runs on Linux, can use sed easily
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          # Fetch the whole history to allow comparing with previous tags for versioning if needed
-          # and to allow pushing back to the branch.
-          fetch-depth: 0 
-          token: ${{ secrets.GITHUB_TOKEN }} # Needs token to push
+          fetch-depth: 0
+          # Using default GITHUB_TOKEN is fine for creating PRs
 
-      - name: Update Cargo.toml version
-        env:
-          NEW_VERSION_WITH_V: ${{ needs.calculate_next_version.outputs.new_version }}
-        run: |
-          # Strip \'v\' prefix for Cargo.toml
-          new_cargo_version=${NEW_VERSION_WITH_V#v}
-          echo "Updating node/Cargo.toml to version: $new_cargo_version"
-          
-          # Use sed to update the version. This assumes the version line looks like:
-          # version = "x.y.z"
-          # It will replace the string between the quotes.
-          # The regex handles potential whitespace around the equals sign.
-          sed -i -E "s/^version\\s*=\\s*\"[0-9a-zA-Z.-]+\"/version = \"$new_cargo_version\"/" node/Cargo.toml
-          
-          echo "Contents of node/Cargo.toml after update:"
-          cat node/Cargo.toml
-
-      - name: Commit and push Cargo.toml changes
+      - name: Update Cargo.toml version locally and create PR
         env:
           NEW_VERSION_WITH_V: ${{ needs.calculate_next_version.outputs.new_version }}
           BRANCH_NAME: ${{ needs.calculate_next_version.outputs.branch_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # gh cli needs this
         run: |
+          new_cargo_version=${NEW_VERSION_WITH_V#v}
+          echo "Updating node/Cargo.toml to version: $new_cargo_version locally for PR"
+          sed -i -E "s/^version\s*=\s*\"[0-9a-zA-Z.-]+\"/version = \"$new_cargo_version\"/" node/Cargo.toml
+          
+          echo "Contents of node/Cargo.toml after local update:"
+          cat node/Cargo.toml
+
+          bump_branch_name="version-bump-${NEW_VERSION_WITH_V}"
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
+          
+          git checkout -b "$bump_branch_name"
           git add node/Cargo.toml
-          # Check if there are changes to commit
-          if git diff --staged --quiet; then
-            echo "No changes to commit in Cargo.toml. Version might be the same."
-          else
-            git commit -m "Bump version to $NEW_VERSION_WITH_V in Cargo.toml
+          git commit -m "Bump version to $NEW_VERSION_WITH_V in Cargo.toml
 
-            [skip ci]" # Add [skip ci] to prevent this commit from triggering another workflow run
-            git push origin HEAD:${BRANCH_NAME}
-            echo "Pushed Cargo.toml changes to ${BRANCH_NAME}"
-          fi
+          [skip ci]"
+          git push origin "$bump_branch_name"
+          
+          echo "Creating Pull Request for version bump..."
+          gh pr create \
+            --title "Bump version to $NEW_VERSION_WITH_V" \
+            --body "This PR bumps the version in node/Cargo.toml to $NEW_VERSION_WITH_V for the release. Triggered by workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --base "${BRANCH_NAME}" \
+            --head "$bump_branch_name" \
+            --label "version-bump,automated-pr"
 
   build_and_package:
-    needs: [calculate_next_version, update_cargo_toml] # Add update_cargo_toml dependency
+    needs: [calculate_next_version, update_cargo_toml] 
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -205,6 +199,22 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        # This will checkout the original commit the workflow ran on, or tip of BRANCH_NAME
+
+      - name: Apply version bump to local Cargo.toml for build
+        env:
+          NEW_VERSION_WITH_V: ${{ needs.calculate_next_version.outputs.new_version }}
+        run: |
+          new_cargo_version=${NEW_VERSION_WITH_V#v}
+          echo "Applying version $new_cargo_version to node/Cargo.toml for build purposes..."
+          if [ -f node/Cargo.toml ]; then
+            sed -i -E "s/^version\s*=\s*\"[0-9a-zA-Z.-]+\"/version = \"$new_cargo_version\"/" node/Cargo.toml
+            echo "node/Cargo.toml updated locally for build:"
+            cat node/Cargo.toml
+          else
+            echo "Error: node/Cargo.toml not found at expected location for build-time update."
+            exit 1
+          fi
 
       - name: Install protoc (protobuf-compiler) for Linux
         if: runner.os == 'Linux'
