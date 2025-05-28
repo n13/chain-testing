@@ -7984,7 +7984,7 @@ dependencies = [
 
 [[package]]
 name = "quantus-node"
-version = "0.1.0"
+version = "0.3.16"
 dependencies = [
  "async-trait",
  "clap",
