@@ -159,6 +159,7 @@ jobs:
           BRANCH_NAME: ${{ needs.calculate_next_version.outputs.branch_name }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # gh cli needs this
         run: |
+          set -ex
           new_cargo_version=${NEW_VERSION_WITH_V#v}
           echo "Updating node/Cargo.toml to version: $new_cargo_version locally for PR"
           sed -i -E "s/^version\s*=\s*\"[0-9a-zA-Z.-]+\"/version = \"$new_cargo_version\"/" node/Cargo.toml
@@ -175,6 +176,8 @@ jobs:
           git commit -m "Bump version to $NEW_VERSION_WITH_V in Cargo.toml
 
           [skip ci]"
+          # Try to delete the remote branch first, ignore error if it doesn't exist
+          git push origin --delete "$bump_branch_name" || true 
           git push origin "$bump_branch_name"
           
           echo "Creating Pull Request for version bump..."
