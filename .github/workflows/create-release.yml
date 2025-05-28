@@ -209,6 +209,7 @@ jobs:
       - name: Apply version bump to local Cargo.toml for build
         env:
           NEW_VERSION_WITH_V: ${{ needs.calculate_next_version.outputs.new_version }}
+        shell: bash
         run: |
           new_cargo_version=${NEW_VERSION_WITH_V#v}
           echo "Applying version $new_cargo_version to node/Cargo.toml for build purposes..."
