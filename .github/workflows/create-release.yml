@@ -185,8 +185,7 @@ jobs:
             --title "Bump version to $NEW_VERSION_WITH_V" \
             --body "This PR bumps the version in node/Cargo.toml to $NEW_VERSION_WITH_V for the release. Triggered by workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --base "${BRANCH_NAME}" \
-            --head "$bump_branch_name" \
-            --label "version-bump,automated-pr"
+            --head "$bump_branch_name"
 
   build_and_package:
     needs: [calculate_next_version, update_cargo_toml] 
