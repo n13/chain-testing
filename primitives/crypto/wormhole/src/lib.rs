@@ -16,11 +16,11 @@
 //!
 //! The hashing strategy ensures determinism while hiding the original secret.
 
-use poseidon_resonance::PoseidonHasher;
+use poseidon_resonance::{bytes_to_felts, string_to_felt, PoseidonHasher};
 use sp_core::{Hasher, H256};
 
 /// Salt used when deriving wormhole addresses.
-pub const ADDRESS_SALT: [u8; 8] = *b"wormhole";
+pub const ADDRESS_SALT: &str = "wormhole";
 
 /// Error types returned from wormhole identity operations.
 #[derive(Debug, Eq, PartialEq)]
@@ -71,34 +71,21 @@ impl WormholePair {
         Ok(&generated_address == address)
     }
 
-    /// Verifies whether the given combined hash generates the specified wormhole address.
-    ///
-    /// # Arguments
-    /// * `address` - The expected wormhole address.
-    /// * `combined_hash` - The result of the first Poseidon hash of (salt + secret).
-    ///                     This is the intermediate hash before the final address derivation.
-    ///
-    /// # Returns
-    /// `Ok(true)` if the address matches the derived one, `Ok(false)` otherwise.
-    pub fn verify_with_combined_hash(
-        address: &H256,
-        combined_hash: &[u8; 32],
-    ) -> Result<bool, WormholeError> {
-        let generated = PoseidonHasher::hash(combined_hash);
-        Ok(&generated == address)
-    }
-
     /// Internal function that generates a `WormholePair` from a given secret.
     ///
     /// This function performs a secondary Poseidon hash over the salt + hashed secret
     /// to derive the wormhole address.
     fn generate_pair_from_secret(secret: &[u8; 32]) -> WormholePair {
-        let mut combined = Vec::with_capacity(ADDRESS_SALT.len() + secret.as_ref().len());
-        combined.extend_from_slice(&ADDRESS_SALT);
-        combined.extend_from_slice(secret.as_ref());
-
+        let mut preimage_felts = Vec::new();
+        let salt_felt = string_to_felt(ADDRESS_SALT);
+        let secret_felt = bytes_to_felts(secret);
+        preimage_felts.push(salt_felt);
+        preimage_felts.extend_from_slice(&secret_felt);
+        let inner_hash = PoseidonHasher::hash_no_pad(preimage_felts);
+        // println!("inner_hash: {:?}", hex::encode(inner_hash.clone()));
+        let second_hash = PoseidonHasher::hash_no_pad(bytes_to_felts(&inner_hash));
         WormholePair {
-            address: PoseidonHasher::hash(PoseidonHasher::hash(&combined).as_ref()),
+            address: H256::from_slice(&second_hash),
             secret: *secret,
         }
     }
@@ -159,30 +146,6 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_with_combined_hash() {
-        // Arrange
-        let secret = [3u8; 32];
-
-        // Generate a pair using our normal process
-        let pair = WormholePair::generate_pair_from_secret(&secret);
-
-        // Create the combined salt + secret
-        let mut combined = Vec::with_capacity(ADDRESS_SALT.len() + secret.len());
-        combined.extend_from_slice(&ADDRESS_SALT);
-        combined.extend_from_slice(&secret);
-
-        // This is the combined hash (first hash in the two-step process)
-        let combined_hash = PoseidonHasher::hash(&combined);
-
-        // Act
-        let result = WormholePair::verify_with_combined_hash(&pair.address, &combined_hash.0);
-
-        // Assert
-        assert!(result.is_ok());
-        assert!(result.unwrap());
-    }
-
-    #[test]
     fn test_address_derivation_properties() {
         // Arrange
         let secret = hex!("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20");
@@ -212,7 +175,7 @@ mod tests {
         // 5. Verify that each stage of the hash process changes the result
         // (Create a hash with salt but without the second hashing step)
         let mut combined = Vec::with_capacity(ADDRESS_SALT.len() + secret.len());
-        combined.extend_from_slice(&ADDRESS_SALT);
+        combined.extend_from_slice(&ADDRESS_SALT.as_bytes());
         combined.extend_from_slice(&secret);
         let first_hash = PoseidonHasher::hash(&combined);
         assert_ne!(pair.address, first_hash);
