@@ -21,7 +21,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Required for git describe/tag to find all tags
+          fetch-depth: 0
 
       - name: Get version information
         id: version_info
@@ -40,8 +40,6 @@ jobs:
             echo "Using specified version: $TARGET_VERSION"
           else
             echo "No specific version provided, determining latest release tag..."
-            # Get the latest tag that looks like a version (vX.Y.Z or vX.Y.Z-prerelease.N)
-            # Sorts tags by version semantically (descending), picks the highest.
             TARGET_VERSION=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
             if [[ -z "$TARGET_VERSION" ]]; then
               echo "::error::No version tags starting with 'v' (e.g., vX.Y.Z) found in the repository."
@@ -74,7 +72,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }} # GITHUB_TOKEN has packages:write permission from job
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check if Docker image already exists and fail if so
         id: check_image
@@ -83,11 +81,9 @@ jobs:
           IMAGE_TO_CHECK="${{ env.GHCR_IMAGE_PATH }}:${{ env.TARGET_VERSION_WITH_V }}"
           echo "Checking for image: $IMAGE_TO_CHECK"
           
-          # Try to inspect the manifest. If it succeeds (exit code 0), the image exists.
-          # Errors (like manifest unknown) are redirected to /dev/null.
           if docker manifest inspect "$IMAGE_TO_CHECK" > /dev/null 2>&1; then
             echo "::error::Image $IMAGE_TO_CHECK already exists. Aborting."
-            exit 1 # Fail the step and the job
+            exit 1
           else
             echo "Image $IMAGE_TO_CHECK does not exist. Proceeding with build."
           fi
@@ -95,7 +91,7 @@ jobs:
       - name: Checkout source for build
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.TARGET_VERSION_WITH_V }} # Checkout the specific tag to build
+          ref: ${{ env.TARGET_VERSION_WITH_V }}
 
       - name: Build and push Docker image from Dockerfile.binary
         uses: docker/build-push-action@v5
@@ -103,15 +99,11 @@ jobs:
           context: .
           file: ./Dockerfile.binary
           push: true
-          platforms: linux/amd64 # Consistent with create-release.yml
+          platforms: linux/amd64
           build-args: |
-            VERSION_ARG=${{ env.TARGET_VERSION_WITH_V }} # Dockerfile expects version with 'v'
+            VERSION_ARG=${{ env.TARGET_VERSION_WITH_V }}
           tags: |
             ${{ env.GHCR_IMAGE_PATH }}:${{ env.TARGET_VERSION_WITH_V }}
-            # To add a 'latest' tag conditionally (e.g., if not a pre-release and is the true latest):
-            # You would need more complex logic here to determine if this version should be 'latest'.
-            # For example, fetch all tags, sort them, compare, and check for pre-release identifiers.
-            # Keeping it simple with just the version tag for now.
 
       - name: Print completion message
         run: |
