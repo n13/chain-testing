@@ -88,15 +88,21 @@ jobs:
             echo "Image $IMAGE_TO_CHECK does not exist. Proceeding with build."
           fi
 
-      - name: Checkout source for build
+      - name: Checkout default branch (for Dockerfile)
+        uses: actions/checkout@v4
+        with:
+          ref: main # Assuming 'main' is your default branch
+
+      - name: Checkout target version source code into subdir
         uses: actions/checkout@v4
         with:
           ref: ${{ env.TARGET_VERSION_WITH_V }}
+          path: source_code_for_build
 
       - name: Build and push Docker image from Dockerfile.binary
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./source_code_for_build
           file: ./Dockerfile.binary
           push: true
           platforms: linux/amd64
