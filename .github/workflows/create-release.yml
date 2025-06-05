@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version_type:
-        description: 'Type of version bump (major, minor, patch) or specify custom version. For 0.x.y releases, major will bump 0.x -> 0.(x+1)'
+        description: "Type of version bump (major, minor, patch) or specify custom version. For 0.x.y releases, major will bump 0.x -> 0.(x+1)"
         required: true
-        default: 'patch'
+        default: "patch"
         type: choice
         options:
           - patch
@@ -20,21 +20,21 @@ on:
         description: 'Custom version string (e.g., v1.2.3 or v0.2.1-beta.1). Only used if version_type is "custom". MUST start with "v" (e.g. v1.2.3)'
         required: false
       is_prerelease:
-        description: 'Is this a pre-release? (e.g., alpha, beta, rc)'
+        description: "Is this a pre-release? (e.g., alpha, beta, rc)"
         required: true
         type: boolean
         default: false
       prerelease_identifier:
-        description: 'Pre-release identifier (e.g., alpha, beta, rc). Only used if is_prerelease is true.'
+        description: "Pre-release identifier (e.g., alpha, beta, rc). Only used if is_prerelease is true."
         required: false
-        default: 'rc'
+        default: "rc"
       draft_release:
-        description: 'Create the release as a draft?'
+        description: "Create the release as a draft?"
         required: true
         type: boolean
         default: true
       fast_test_create_release_job:
-        description: 'If true, skips actual build and uses dummy artifacts to test release creation steps.'
+        description: "If true, skips actual build and uses dummy artifacts to test release creation steps."
         required: false
         type: boolean
         default: false
@@ -158,19 +158,19 @@ jobs:
           NEW_VERSION_WITH_V: ${{ needs.calculate_next_version.outputs.new_version }}
           BRANCH_NAME: ${{ needs.calculate_next_version.outputs.branch_name }}
           # IMPORTANT: Use ADMIN_PAT for gh tool to have permission to create PR
-          GITHUB_TOKEN: ${{ secrets.ADMIN_PAT }} 
+          GITHUB_TOKEN: ${{ secrets.ADMIN_PAT }}
         run: |
           set -ex # exit on error, print commands
           new_cargo_version=${NEW_VERSION_WITH_V#v}
-          
+
           echo "Updating node/Cargo.toml to version: $new_cargo_version"
           sed -i -E "s/^version\s*=\s*\"[0-9a-zA-Z.-]+\"/version = \"$new_cargo_version\"/" node/Cargo.toml
-          
+
           echo "Updating Cargo.lock for quantus-node package..."
           # Attempt to update Cargo.lock. If this specific version isn't resolvable (e.g. for a new, unpublished crate version),
           # cargo update might not change anything or could error if strict. We'll proceed.
           cargo update -p quantus-node --precise "$new_cargo_version" || echo "cargo update -p quantus-node tried, proceeding."
-          
+
           echo "Contents of node/Cargo.toml after update:"
           cat node/Cargo.toml
 
@@ -178,18 +178,18 @@ jobs:
           # Configure git user for the commit
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
+
           git checkout -b "$bump_branch_name"
           git add node/Cargo.toml Cargo.lock # Add updated Cargo.toml and Cargo.lock
           git commit -m $"Bump version to $NEW_VERSION_WITH_V\n\nUpdate Cargo.toml and Cargo.lock for quantus-node.\n[skip ci]"
-          
+
           # Try to delete the remote branch first, ignore error if it doesn't exist
-          git push origin --delete "$bump_branch_name" || true 
+          git push origin --delete "$bump_branch_name" || true
           # Push the new branch. This uses the checkout token if not overridden, but gh needs ADMIN_PAT.
           # For pushing this branch, default GITHUB_TOKEN (if it has contents:write from permissions block) might be okay.
           # However, gh cli operations need the elevated PAT.
           git push origin "$bump_branch_name"
-          
+
           echo "Creating Pull Request for version bump..."
           # gh cli will use GITHUB_TOKEN from env, which we set to ADMIN_PAT
           gh pr create \
@@ -200,7 +200,7 @@ jobs:
             --label "version-bump,automated-pr"
 
   build_and_package:
-    needs: [calculate_next_version, update_cargo_toml] 
+    needs: [calculate_next_version, update_cargo_toml]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -331,24 +331,24 @@ jobs:
         env:
           NEW_VERSION: ${{ needs.calculate_next_version.outputs.new_version }}
           TARGET_ARCH: ${{ matrix.target }}
-        shell: bash 
+        shell: bash
         run: |
           NODE_BASE_NAME="quantus-node"
-          
+
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             NODE_EXECUTABLE_NAME="${NODE_BASE_NAME}.exe"
             ARCHIVE_EXTENSION="zip"
             # These are defined for eval later
             CHSUM_EXEC="powershell -Command \"(Get-FileHash -Algorithm SHA256 '\${asset_name}').Hash.ToLower() + ' *\${asset_name}' | Set-Content -Encoding ascii '\${checksum_file_name}'\""
             ARCHIVE_EXEC="powershell -Command \"Compress-Archive -Path staging/\${NODE_EXECUTABLE_NAME} -DestinationPath \${asset_name}\""
-            
+
             # asset_name and checksum_file_name will be defined globally below for Windows path
             asset_name="${NODE_BASE_NAME}-${NEW_VERSION}-${TARGET_ARCH}.${ARCHIVE_EXTENSION}"
             checksum_file_name="sha256sums-${NEW_VERSION}-${TARGET_ARCH}.txt"
 
             mkdir -p staging
             cp "target/${TARGET_ARCH}/release/${NODE_EXECUTABLE_NAME}" "staging/"
-            
+
             eval "$ARCHIVE_EXEC"
             eval "$CHSUM_EXEC"
 
@@ -361,16 +361,16 @@ jobs:
             mkdir staging
             # Copy from target-specific path
             cp target/${TARGET_ARCH}/release/${NODE_BINARY_NAME} staging/
-            
+
             # Create tarball
             (cd staging && tar -czvf "../${asset_name}" ${NODE_BINARY_NAME})
-            
+
             # Generate checksum for the tarball
             if [[ "${{ runner.os }}" == "macOS" ]]; then
               shasum -a 256 "${asset_name}" > "${checksum_file_name}"
             else
               sha256sum "${asset_name}" > "${checksum_file_name}"
-            fi          
+            fi
           fi
 
           echo "Created asset: ${asset_name}"
@@ -387,12 +387,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-assets-${{ matrix.target }}
-          path: | 
+          path: |
             quantus-node-${{ needs.calculate_next_version.outputs.new_version }}-${{ matrix.target }}.${{ runner.os == 'Windows' && 'zip' || 'tar.gz' }}
             sha256sums-${{ needs.calculate_next_version.outputs.new_version }}-${{ matrix.target }}.txt
 
   create_github_release:
-    needs: [calculate_next_version, build_and_package] 
+    needs: [calculate_next_version, build_and_package]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -417,7 +417,7 @@ jobs:
           echo "--- Finding asset files ---"
           find downloaded-artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.txt" \) -print0 > asset_files.txt
           echo "--- Raw content of asset_files.txt (null characters will not be visible) ---"
-          cat asset_files.txt 
+          cat asset_files.txt
           echo "--- Processed content of asset_files.txt (one file per line) ---"
           cat asset_files.txt | xargs -0 -n1
           echo "--- End of Generate asset list file step ---"
@@ -442,7 +442,7 @@ jobs:
           DRAFT_RELEASE: ${{ github.event.inputs.draft_release }}
         run: |
           release_notes=$(printf "Automated release for version %s.\\nBuilt from branch: \`%s\`\\nCommit: \`%s\`" "$NEW_VERSION" "$BRANCH_NAME" "$COMMIT_SHA_SHORT")
-          
+
           # Write release notes to a file
           printf "%s" "$release_notes" > release_notes.txt
 
@@ -464,4 +464,47 @@ jobs:
             --target "$GITHUB_SHA" \
             $( [[ "$IS_PRERELEASE" == "true" ]] && echo "--prerelease" ) \
             $( [[ "$DRAFT_RELEASE" == "true" ]] && echo "--draft" ) \
-            "${asset_args[@]}" 
+            "${asset_args[@]}"
+
+  build_and_test_docker_image_binary:
+    name: Build & Test Docker Image (Binary)
+    needs: [calculate_next_version, create_github_release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker image from Dockerfile.binary
+        id: build_docker_binary
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.binary
+          push: false
+          load: true # Added to load the image into the runner
+          platforms: linux/amd64
+          build-args: |
+            VERSION_ARG=${{ needs.calculate_next_version.outputs.new_version }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/quantus-node-test:${{ needs.calculate_next_version.outputs.new_version }}
+            ghcr.io/${{ github.repository_owner }}/quantus-node-test:latest
+
+      - name: Test the built Docker image
+        run: |
+          echo "Testing Docker image ghcr.io/${{ github.repository_owner }}/quantus-node-test:${{ needs.calculate_next_version.outputs.new_version }}"
+          # Example test: Run the image and ask for its version
+          docker run --rm ghcr.io/${{ github.repository_owner }}/quantus-node-test:${{ needs.calculate_next_version.outputs.new_version }} quantus-node --version
+          echo "Docker image test (version check) successful."
