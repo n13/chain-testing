@@ -204,6 +204,11 @@ jobs:
             PR_LABELS="$PR_LABELS,draft-release"
           fi
 
+          # Ensure labels exist
+          gh label create "automated" --color "ededed" --description "Automated PR" || true
+          gh label create "release-proposal" --color "1d76db" --description "Release Proposal" || true
+          gh label create "draft-release" --color "6c757d" --description "Draft Release" || true
+
           gh pr create \
             --title "$PR_TITLE" \
             --body "$(printf "Automated version bump for release %s.\\n\\n%s\\n\\nTriggered by workflow run: %s\\n\\nType: %s" "$NEW_VERSION" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" "${{ github.event.inputs.version_type }}")" \

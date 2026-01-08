@@ -203,6 +203,11 @@ jobs:
           - Updated \`Cargo.lock\`
           EOF
           
+          # Ensure labels exist
+          gh label create "automated" --color "ededed" --description "Automated PR" || true
+          gh label create "dilithium-release-proposal" --color "1d76db" --description "Dilithium Release Proposal" || true
+          gh label create "draft-release" --color "6c757d" --description "Draft Release" || true
+
           gh pr create \
             --title "$PR_TITLE" \
             --body-file pr_body.md \
