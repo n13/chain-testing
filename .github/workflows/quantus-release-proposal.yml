@@ -194,7 +194,7 @@ jobs:
           fi
           
           git commit -m "ci: Automate version bump to $NEW_VERSION"
-          git push origin "$branch_name"
+          git push --force origin "$branch_name"
 
           PR_TITLE="Automate release for $NEW_VERSION"
 

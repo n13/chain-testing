@@ -180,7 +180,7 @@ jobs:
           
           git add primitives/dilithium-crypto/Cargo.toml Cargo.toml Cargo.lock
           git commit -m "ci: Dilithium version bump to $NEW_VERSION"
-          git push origin "$branch_name"
+          git push --force origin "$branch_name"
 
           # Prepare PR title and labels
           if [[ "${{ github.event.inputs.is_draft }}" == "true" ]]; then
